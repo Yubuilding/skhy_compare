@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <meta name="theme-color" content="#f4f1eb" />
+    <title>SK 海力士 ADR 价格速算</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="/app.js" defer></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="topbar">
+        <a class="brand" href="/" aria-label="返回首页">
+          <span class="brand-mark">SK</span>
+          <span>
+            <strong>海力士价格速算</strong>
+            <small>ADR · KOSPI · FX</small>
+          </span>
+        </a>
+        <div class="refresh-area">
+          <span class="refresh-time" id="refreshTime">等待获取行情</span>
+          <button class="refresh-button" id="refreshButton" type="button">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M20 6v5h-5M4 18v-5h5M18.4 9A7 7 0 0 0 6.2 6.2L4 8m16 8-2.2 2A7 7 0 0 1 5.6 15" />
+            </svg>
+            <span>刷新行情</span>
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <section class="hero-grid" aria-labelledby="pageTitle">
+          <article class="premium-card" id="premiumCard">
+            <div class="eyebrow-row">
+              <span class="eyebrow">当前 ADR 相对韩股</span>
+              <span class="live-pill" id="overallStatus"><i></i> 正在连接</span>
+            </div>
+            <h1 id="pageTitle" class="sr-only">SK 海力士 ADR 价格速算</h1>
+            <div class="premium-value" id="premiumValue">--</div>
+            <div class="premium-label" id="premiumLabel">等待行情数据</div>
+            <div class="premium-divider"></div>
+            <div class="hero-metrics">
+              <div>
+                <span>ADR 理论价</span>
+                <strong id="fairAdrHero">--</strong>
+              </div>
+              <div>
+                <span>每份价差</span>
+                <strong id="priceGapHero">--</strong>
+              </div>
+            </div>
+          </article>
+
+          <article class="explain-card">
+            <span class="eyebrow">速算逻辑</span>
+            <h2>同一份股权，换成同一种货币。</h2>
+            <p>
+              先把韩股价格按 USD/KRW 换算成美元，再除以每股对应的 ADR 份数，得到一份 ADR 的理论价格。
+            </p>
+            <div class="formula" aria-label="计算公式">
+              <span>韩股价 ÷ 汇率 ÷ ADR 比例</span>
+              <b>=</b>
+              <strong>ADR 理论价</strong>
+            </div>
+            <p class="market-note">
+              韩美市场交易时段不同。页面比较的是各数据源的最新可得价格，请同时查看下方行情时间。
+            </p>
+          </article>
+        </section>
+
+        <div class="error-banner" id="errorBanner" role="alert" hidden></div>
+
+        <section class="section-block" aria-labelledby="inputsTitle">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">实时输入</span>
+              <h2 id="inputsTitle">三项市场数据</h2>
+            </div>
+            <p>数字可直接修改；点击“刷新行情”恢复自动值。</p>
+          </div>
+
+          <div class="quote-grid">
+            <article class="quote-card">
+              <div class="quote-topline">
+                <span class="market-tag us">NASDAQ</span>
+                <span class="market-state" id="adrMarketState">--</span>
+              </div>
+              <label for="adrPrice">SK 海力士 ADR</label>
+              <div class="price-input">
+                <span>$</span>
+                <input id="adrPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="--" />
+                <small>USD</small>
+              </div>
+              <div class="quote-meta">
+                <strong>SKHY</strong>
+                <span id="adrMeta">等待数据</span>
+              </div>
+            </article>
+
+            <article class="quote-card">
+              <div class="quote-topline">
+                <span class="market-tag kr">KOSPI</span>
+                <span class="market-state" id="krMarketState">--</span>
+              </div>
+              <label for="krPrice">SK 海力士韩股</label>
+              <div class="price-input">
+                <span>₩</span>
+                <input id="krPrice" type="number" min="0" step="100" inputmode="numeric" placeholder="--" />
+                <small>KRW</small>
+              </div>
+              <div class="quote-meta">
+                <strong>000660</strong>
+                <span id="krMeta">等待数据</span>
+              </div>
+            </article>
+
+            <article class="quote-card">
+              <div class="quote-topline">
+                <span class="market-tag fx">FX</span>
+                <span class="market-state">USD/KRW</span>
+              </div>
+              <label for="fxRate">1 美元兑韩元</label>
+              <div class="price-input">
+                <span>₩</span>
+                <input id="fxRate" type="number" min="0" step="0.01" inputmode="decimal" placeholder="--" />
+                <small>KRW</small>
+              </div>
+              <div class="quote-meta">
+                <strong>汇率</strong>
+                <span id="fxMeta">等待数据</span>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="result-panel" aria-labelledby="resultTitle">
+          <div class="result-copy">
+            <span class="eyebrow">换算结果</span>
+            <h2 id="resultTitle">从一股韩股到一份 ADR</h2>
+            <p>以下结果会随行情输入或 ADR 比例立即更新。</p>
+
+            <label class="ratio-control" for="adrRatio">
+              <span>
+                <strong>每股韩股对应 ADR 份数</strong>
+                <small>官方发行比例默认为 10；可自行改成 11 等其他假设。</small>
+              </span>
+              <span class="ratio-input-wrap">
+                <input id="adrRatio" type="number" min="0.01" step="0.01" value="10" inputmode="decimal" />
+                <b>份</b>
+              </span>
+            </label>
+          </div>
+
+          <div class="result-grid">
+            <div class="result-item featured">
+              <span>ADR 理论价</span>
+              <strong id="fairAdrResult">--</strong>
+              <small>韩股美元价 ÷ ADR 比例</small>
+            </div>
+            <div class="result-item">
+              <span>一股韩股美元价</span>
+              <strong id="krUsdResult">--</strong>
+              <small>韩股价 ÷ USD/KRW</small>
+            </div>
+            <div class="result-item">
+              <span>每份 ADR 价差</span>
+              <strong id="priceGapResult">--</strong>
+              <small>美股现价 − ADR 理论价</small>
+            </div>
+            <div class="result-item">
+              <span>当前定价状态</span>
+              <strong id="pricingStateResult">--</strong>
+              <small id="pricingStateNote">等待完整数据</small>
+            </div>
+          </div>
+        </section>
+
+        <section class="disclosure">
+          <div>
+            <strong>数据说明</strong>
+            <p>ADR 行情优先来自 Nasdaq；韩股与汇率优先来自 Naver Finance；失败时尝试 Yahoo Finance。</p>
+          </div>
+          <div>
+            <strong>使用边界</strong>
+            <p>免费行情可能延迟，且未计入托管费、税费、点差、跨境转换限制。本工具仅供价格观察，不构成投资建议。</p>
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <span>SKHY / 000660 / USDKRW</span>
+        <span>本地运行 · 数据不上传</span>
+      </footer>
+    </div>
+  </body>
+</html>
