@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import math
 import threading
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -21,6 +22,7 @@ NAVER_FX_URL = (
 YAHOO_CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1m&range=1d"
 DATA_ERRORS = (KeyError, IndexError, TypeError, ValueError, OSError)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+DEFAULT_ADRS_PER_KOREAN_SHARE = 10
 
 
 class JsonHttpClient:
@@ -45,7 +47,7 @@ def calculate_comparison(
     adr_price_usd,
     korean_share_price_krw,
     krw_per_usd,
-    adrs_per_korean_share=10,
+    adrs_per_korean_share=DEFAULT_ADRS_PER_KOREAN_SHARE,
 ):
     """Return the USD-equivalent values and ADR premium for positive inputs."""
     values = (
@@ -54,7 +56,13 @@ def calculate_comparison(
         krw_per_usd,
         adrs_per_korean_share,
     )
-    if any(not isinstance(value, (int, float)) or value <= 0 for value in values):
+    if any(
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(value)
+        or value <= 0
+        for value in values
+    ):
         raise ValueError("All prices, the exchange rate, and the ADR ratio must be positive")
 
     korean_share_usd = korean_share_price_krw / krw_per_usd
@@ -71,10 +79,14 @@ def calculate_comparison(
 
 def _parse_number(value):
     if isinstance(value, (int, float)):
-        return float(value)
-    if not isinstance(value, str):
+        parsed = float(value)
+    elif isinstance(value, str):
+        parsed = float(value.replace("$", "").replace(",", "").strip())
+    else:
         raise ValueError("Market value is not numeric")
-    return float(value.replace("$", "").replace(",", "").strip())
+    if not math.isfinite(parsed) or parsed <= 0:
+        raise ValueError("Market value must be a finite positive number")
+    return parsed
 
 
 def _fetch_adr_quote(client):
@@ -95,21 +107,14 @@ def _fetch_adr_quote(client):
             "isRealTime": bool(primary.get("isRealTime")),
         }
     except DATA_ERRORS:
-        payload = client.get_json(
-            YAHOO_CHART_URL.format(symbol="SKHY"),
-            headers={"User-Agent": "Mozilla/5.0"},
-        )
-        meta = payload["chart"]["result"][0]["meta"]
-        timestamp = meta.get("regularMarketTime")
-        if timestamp:
-            timestamp = datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
+        meta = _fetch_yahoo_meta(client, "SKHY")
         market_status = meta.get("marketState")
         return {
             "price": _parse_number(meta["regularMarketPrice"]),
             "currency": "USD",
             "symbol": "SKHY",
             "source": "Yahoo Finance (fallback)",
-            "timestamp": timestamp,
+            "timestamp": _yahoo_timestamp(meta),
             "marketStatus": market_status,
             "isRealTime": market_status == "REGULAR",
         }
@@ -219,7 +224,7 @@ def fetch_market_snapshot(client=None):
 
     return {
         "fetchedAt": datetime.now(timezone.utc).isoformat(),
-        "ratio": 10,
+        "ratio": DEFAULT_ADRS_PER_KOREAN_SHARE,
         "quotes": quotes,
         "comparison": comparison,
         "errors": errors,
@@ -243,7 +248,7 @@ def create_server(host="127.0.0.1", port=8787, client=None, static_dir=None):
 
         def _send_snapshot(self):
             payload = fetch_market_snapshot(market_client)
-            body = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+            body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -266,7 +271,13 @@ def main(argv=None):
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args(argv)
 
-    server = create_server(args.host, args.port)
+    try:
+        server = create_server(args.host, args.port)
+    except OSError as error:
+        if args.port == 0:
+            raise
+        print(f"端口 {args.port} 已被占用，将自动改用其他本机端口。 ({error})")
+        server = create_server(args.host, 0)
     url = f"http://{args.host}:{server.server_address[1]}"
     print(f"SK hynix 价格速算已启动：{url}")
     print("关闭窗口或按 Control+C 即可停止。")

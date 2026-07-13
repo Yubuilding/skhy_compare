@@ -104,6 +104,26 @@ class ComparisonTests(unittest.TestCase):
         self.assertAlmostEqual(result["premium_percent"], 25.0, delta=0.01)
         self.assertAlmostEqual(result["price_difference_usd"], 30.905342, places=6)
 
+    def test_supports_an_eleven_to_one_custom_ratio(self):
+        result = calculate_comparison(
+            adr_price_usd=154.54,
+            korean_share_price_krw=1_845_000,
+            krw_per_usd=1_492.30,
+            adrs_per_korean_share=11,
+        )
+
+        self.assertAlmostEqual(result["fair_adr_usd"], 112.395144, places=6)
+
+    def test_rejects_non_finite_values(self):
+        for invalid_value in (float("nan"), float("inf"), float("-inf")):
+            with self.subTest(invalid_value=invalid_value):
+                with self.assertRaises(ValueError):
+                    calculate_comparison(
+                        adr_price_usd=invalid_value,
+                        korean_share_price_krw=1_845_000,
+                        krw_per_usd=1_492.30,
+                    )
+
 
 class MarketSnapshotTests(unittest.TestCase):
     def test_fetches_primary_quotes_and_calculates_comparison(self):
@@ -114,6 +134,23 @@ class MarketSnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot["quotes"]["koreanShare"]["price"], 1_845_000)
         self.assertEqual(snapshot["quotes"]["fx"]["price"], 1_492.30)
         self.assertAlmostEqual(snapshot["comparison"]["premium_percent"], 25.0, delta=0.01)
+        self.assertEqual(snapshot["errors"], [])
+
+    def test_uses_fallback_when_nasdaq_is_unavailable(self):
+        snapshot = fetch_market_snapshot(NasdaqFailureClient())
+
+        self.assertEqual(snapshot["quotes"]["adr"]["price"], 153.21)
+        self.assertEqual(snapshot["quotes"]["adr"]["source"], "Yahoo Finance (fallback)")
+        self.assertEqual(snapshot["errors"], [])
+
+    def test_uses_fallbacks_when_naver_is_unavailable(self):
+        snapshot = fetch_market_snapshot(NaverFailureClient())
+
+        self.assertEqual(snapshot["quotes"]["koreanShare"]["price"], 1_840_000)
+        self.assertEqual(snapshot["quotes"]["fx"]["price"], 1490.5)
+        self.assertEqual(
+            snapshot["quotes"]["koreanShare"]["source"], "Yahoo Finance (fallback)"
+        )
         self.assertEqual(snapshot["errors"], [])
 
 
@@ -134,24 +171,6 @@ class ApiTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
-
-    def test_uses_fallback_when_nasdaq_is_unavailable(self):
-        snapshot = fetch_market_snapshot(NasdaqFailureClient())
-
-        self.assertEqual(snapshot["quotes"]["adr"]["price"], 153.21)
-        self.assertEqual(snapshot["quotes"]["adr"]["source"], "Yahoo Finance (fallback)")
-        self.assertEqual(snapshot["errors"], [])
-
-    def test_uses_fallbacks_when_naver_is_unavailable(self):
-        snapshot = fetch_market_snapshot(NaverFailureClient())
-
-        self.assertEqual(snapshot["quotes"]["koreanShare"]["price"], 1_840_000)
-        self.assertEqual(snapshot["quotes"]["fx"]["price"], 1490.5)
-        self.assertEqual(
-            snapshot["quotes"]["koreanShare"]["source"], "Yahoo Finance (fallback)"
-        )
-        self.assertEqual(snapshot["errors"], [])
-
 
 if __name__ == "__main__":
     unittest.main()

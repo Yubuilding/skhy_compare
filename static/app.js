@@ -26,6 +26,9 @@ const elements = {
 
 const marketInputs = [elements.adrPrice, elements.krPrice, elements.fxRate];
 let hasManualMarketInput = false;
+let hasManualRatio = false;
+let marketInputRevision = 0;
+let requestRevision = 0;
 
 const usd = new Intl.NumberFormat("zh-CN", {
   style: "currency",
@@ -48,8 +51,10 @@ function numericValue(input) {
 function formatMarketStatus(status) {
   const labels = {
     OPEN: "交易中",
+    Open: "交易中",
     REGULAR: "交易中",
     CLOSED: "已收盘",
+    Closed: "已收盘",
     CLOSE: "已收盘",
     PRE: "盘前",
     POST: "盘后",
@@ -59,6 +64,7 @@ function formatMarketStatus(status) {
 
 function formatTimestamp(value) {
   if (!value) return "时间未提供";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   const parsed = new Date(value);
   if (!Number.isNaN(parsed.getTime())) {
     return parsed.toLocaleString("zh-CN", {
@@ -118,14 +124,21 @@ function calculate() {
 }
 
 function applyQuote(quote, input, meta, marketState) {
-  if (!quote) return;
+  if (!quote) {
+    input.value = "";
+    meta.textContent = "本次自动获取失败，请手动输入";
+    if (marketState) marketState.textContent = "数据不可用";
+    return;
+  }
   input.value = quote.price;
-  meta.textContent = `${quote.source} · ${formatTimestamp(quote.timestamp)}`;
+  const freshness = quote.isRealTime ? "实时" : "最新可得";
+  meta.textContent = `${freshness} · ${quote.source} · ${formatTimestamp(quote.timestamp)}`;
   if (marketState) marketState.textContent = formatMarketStatus(quote.marketStatus);
 }
 
 function markManual(input) {
   hasManualMarketInput = true;
+  marketInputRevision += 1;
   const metaMap = new Map([
     [elements.adrPrice, elements.adrMeta],
     [elements.krPrice, elements.krMeta],
@@ -137,6 +150,8 @@ function markManual(input) {
 
 async function loadSnapshot({ manualRefresh = false } = {}) {
   if (!manualRefresh && hasManualMarketInput) return;
+  const thisRequest = ++requestRevision;
+  const inputRevisionAtStart = marketInputRevision;
   elements.refreshButton.disabled = true;
   elements.refreshButton.classList.add("loading");
   elements.overallStatus.className = "live-pill";
@@ -148,7 +163,17 @@ async function loadSnapshot({ manualRefresh = false } = {}) {
     if (!response.ok) throw new Error(`服务器返回 ${response.status}`);
     const snapshot = await response.json();
 
+    if (thisRequest !== requestRevision) return;
+    if (marketInputRevision !== inputRevisionAtStart) {
+      elements.overallStatus.className = "live-pill ready";
+      elements.overallStatus.innerHTML = "<i></i> 已保留手动输入";
+      return;
+    }
+
     hasManualMarketInput = false;
+    if (!hasManualRatio && Number(snapshot.ratio) > 0) {
+      elements.adrRatio.value = snapshot.ratio;
+    }
     applyQuote(snapshot.quotes.adr, elements.adrPrice, elements.adrMeta, elements.adrMarketState);
     applyQuote(snapshot.quotes.koreanShare, elements.krPrice, elements.krMeta, elements.krMarketState);
     applyQuote(snapshot.quotes.fx, elements.fxRate, elements.fxMeta);
@@ -174,7 +199,7 @@ async function loadSnapshot({ manualRefresh = false } = {}) {
       elements.overallStatus.innerHTML = "<i></i> 部分数据失败";
     } else {
       elements.overallStatus.className = "live-pill ready";
-      elements.overallStatus.innerHTML = "<i></i> 数据已更新";
+      elements.overallStatus.innerHTML = "<i></i> 最新数据已更新";
     }
   } catch (error) {
     elements.errorBanner.textContent = `暂时无法获取行情：${error.message}。请检查网络，或手动填写三项数据。`;
@@ -191,7 +216,10 @@ async function loadSnapshot({ manualRefresh = false } = {}) {
 marketInputs.forEach((input) => {
   input.addEventListener("input", () => markManual(input));
 });
-elements.adrRatio.addEventListener("input", calculate);
+elements.adrRatio.addEventListener("input", () => {
+  hasManualRatio = true;
+  calculate();
+});
 elements.refreshButton.addEventListener("click", () => loadSnapshot({ manualRefresh: true }));
 
 loadSnapshot();
