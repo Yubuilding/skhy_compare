@@ -801,6 +801,10 @@ input {
   padding-top: 76px;
 }
 
+.market-funds-section {
+  padding-top: 76px;
+}
+
 .history-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -832,6 +836,56 @@ input {
   margin: 6px 0 0;
   font-size: 18px;
   letter-spacing: -0.025em;
+}
+
+.fund-summary {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: end;
+  gap: 5px 14px;
+  margin-top: 22px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: #fbf9f5;
+}
+
+.fund-summary span {
+  grid-column: 1 / -1;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.fund-summary strong {
+  font-size: 24px;
+  letter-spacing: -0.035em;
+}
+
+.fund-summary small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 750;
+}
+
+.fund-summary small.up {
+  color: var(--positive);
+}
+
+.fund-summary small.down {
+  color: var(--negative);
+}
+
+.fund-table-wrap {
+  max-height: 315px;
+  margin-top: 16px;
+}
+
+.market-funds-note {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.6;
+  text-align: right;
 }
 
 .chart-legend {
@@ -1137,6 +1191,10 @@ footer {
   }
 
   .history-section {
+    padding-top: 58px;
+  }
+
+  .market-funds-section {
     padding-top: 58px;
   }
 

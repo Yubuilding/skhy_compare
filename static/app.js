@@ -5,6 +5,7 @@ import {
   renderPremiumChart,
 } from "./history-charts.mjs";
 import { waitForNewPublishedSnapshot } from "./admin-refresh.mjs";
+import { buildMarketFundsView } from "./market-funds.mjs";
 
 const elements = {
   adrPrice: document.querySelector("#adrPrice"),
@@ -51,6 +52,15 @@ const elements = {
   premiumHistoryMeta: document.querySelector("#premiumHistoryMeta"),
   premiumChartRatio: document.querySelector("#premiumChartRatio"),
   foreignHistoryTable: document.querySelector("#foreignHistoryTable"),
+  marginFinancingDate: document.querySelector("#marginFinancingDate"),
+  marginFinancingValue: document.querySelector("#marginFinancingValue"),
+  marginFinancingChange: document.querySelector("#marginFinancingChange"),
+  marginFinancingTable: document.querySelector("#marginFinancingTable"),
+  investorDepositsDate: document.querySelector("#investorDepositsDate"),
+  investorDepositsValue: document.querySelector("#investorDepositsValue"),
+  investorDepositsChange: document.querySelector("#investorDepositsChange"),
+  investorDepositsTable: document.querySelector("#investorDepositsTable"),
+  marketFundsMeta: document.querySelector("#marketFundsMeta"),
 };
 
 const marketInputs = [elements.adrPrice, elements.krPrice, elements.fxRate];
@@ -320,6 +330,61 @@ function renderForeignHistoryTable(rows) {
   });
 }
 
+function renderMarketFundTable(series, tableBody, dateNode, valueNode, changeNode) {
+  const formatter = new Intl.NumberFormat("zh-CN");
+  tableBody.replaceChildren();
+  series.rows.forEach((row) => {
+    const tr = document.createElement("tr");
+    const changePrefix = row.change > 0 ? "+" : row.change < 0 ? "−" : "";
+    const values = [
+      row.date,
+      formatter.format(row.balance),
+      `${changePrefix}${formatter.format(Math.abs(row.change))}`,
+    ];
+    values.forEach((value, index) => {
+      const td = document.createElement("td");
+      td.textContent = value;
+      if (index === 2) td.className = row.tone === "up" ? "buy" : row.tone === "down" ? "sell" : "";
+      tr.append(td);
+    });
+    tableBody.append(tr);
+  });
+
+  if (!series.latest) {
+    dateNode.textContent = "暂无可用发布数据";
+    valueNode.textContent = "--";
+    changeNode.textContent = "较前日 --";
+    changeNode.className = "";
+    return;
+  }
+  const prefix = series.latest.change > 0 ? "+" : series.latest.change < 0 ? "−" : "";
+  dateNode.textContent = `截至 ${series.rows[0].date}`;
+  valueNode.textContent = `${formatter.format(series.latest.balance)} 亿`;
+  changeNode.textContent = `较前日 ${prefix}${formatter.format(Math.abs(series.latest.change))}`;
+  changeNode.className = series.latest.tone;
+}
+
+function renderMarketFunds(rows) {
+  const view = buildMarketFundsView(rows);
+  renderMarketFundTable(
+    view.marginFinancing,
+    elements.marginFinancingTable,
+    elements.marginFinancingDate,
+    elements.marginFinancingValue,
+    elements.marginFinancingChange,
+  );
+  renderMarketFundTable(
+    view.investorDeposits,
+    elements.investorDepositsTable,
+    elements.investorDepositsDate,
+    elements.investorDepositsValue,
+    elements.investorDepositsChange,
+  );
+  elements.marketFundsMeta.textContent = view.latestDate
+    ? `Naver Finance · 最近 ${view.marginFinancing.rows.length} 个发布日 · 最新 ${view.latestDate} · 韩国全市场口径`
+    : "Naver Finance · 韩国市场资金数据暂不可用";
+}
+
 function applyHistory(history) {
   historyData = history;
   const flowRows = renderForeignFlowChart(elements.foreignFlowChart, history.foreignFlow);
@@ -328,11 +393,13 @@ function applyHistory(history) {
     ? `Naver Finance · 最近 ${flowRows.length} 个已确认交易日`
     : "Naver Finance · 暂无已确认历史数据";
   renderPremiumHistory();
+  renderMarketFunds(history.marketFunds);
 
   if (history.errors.length) {
     const labels = history.errors.map((item) => ({
       foreignFlow: "历史外资",
       premiumInputs: "历史溢价",
+      marketFunds: "韩国融资与预托金",
     })[item.field] || item.field);
     elements.historyError.textContent = `${labels.join("、")}数据暂时不可用，其他图表仍可查看。`;
     elements.historyError.hidden = false;

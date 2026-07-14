@@ -37,6 +37,24 @@ FOREIGN_FLOW_HTML = """
 </table>
 """
 
+MARKET_FUNDS_HTML = """
+<h4 class="top_tlt"><span class="top_tlt_guide">(단위:억원)</span></h4>
+<table summary="증시자금동향에 관한 표이며 날짜별로 정보를 제공합니다.">
+  <tr>
+    <td class="date">26.07.10</td>
+    <td class="rate_up">1,090,115</td><td class="rate_up">34,358</td>
+    <td class="rate_down">347,886</td><td class="rate_down">7,854</td>
+    <td class="rate_up">3,500,000</td><td class="rate_up">1,000</td>
+  </tr>
+  <tr>
+    <td class="date">26.07.09</td>
+    <td class="rate_down">1,055,757</td><td class="rate_down">5,000</td>
+    <td class="rate_up">355,740</td><td class="rate_up">2,500</td>
+    <td class="rate_down">3,499,000</td><td class="rate_down">1,000</td>
+  </tr>
+</table>
+"""
+
 
 class StubClient:
     def get_json(self, url, headers=None):
@@ -156,6 +174,29 @@ class HistoryStubClient(StubClient):
                 {"localTradedAt": "2026-07-10", "closePrice": "1,502.00"},
             ]
         return super().get_json(url, headers)
+
+    def get_text(self, url, headers=None):
+        if "sise/sise_deposit.naver" in url:
+            return MARKET_FUNDS_HTML
+        return super().get_text(url, headers)
+
+
+class MalformedMarketFundsClient(HistoryStubClient):
+    def get_text(self, url, headers=None):
+        if "sise/sise_deposit.naver" in url:
+            return "<html><body>temporarily unavailable</body></html>"
+        return super().get_text(url, headers)
+
+
+class SignedTextMarketFundsClient(HistoryStubClient):
+    def get_text(self, url, headers=None):
+        if "sise/sise_deposit.naver" in url:
+            return MARKET_FUNDS_HTML.replace(
+                '<td class="rate_down">5,000</td>', '<td>-5,000</td>'
+            ).replace(
+                '<td class="rate_down">7,854</td>', '<td>-7,854</td>'
+            )
+        return super().get_text(url, headers)
 
 
 class YahooPostMarketClient(StubClient):
@@ -410,7 +451,44 @@ class MarketHistoryTests(unittest.TestCase):
                 },
             ],
         )
+        self.assertEqual(
+            history["marketFunds"],
+            [
+                {
+                    "date": "2026-07-09",
+                    "investorDeposits100mKrw": 1_055_757,
+                    "investorDepositsChange100mKrw": -5_000,
+                    "marginFinancing100mKrw": 355_740,
+                    "marginFinancingChange100mKrw": 2_500,
+                },
+                {
+                    "date": "2026-07-10",
+                    "investorDeposits100mKrw": 1_090_115,
+                    "investorDepositsChange100mKrw": 34_358,
+                    "marginFinancing100mKrw": 347_886,
+                    "marginFinancingChange100mKrw": -7_854,
+                },
+            ],
+        )
         self.assertEqual(history["errors"], [])
+
+    def test_market_funds_failure_does_not_hide_other_history(self):
+        history = fetch_market_history(MalformedMarketFundsClient())
+
+        self.assertEqual(history["marketFunds"], [])
+        self.assertEqual(len(history["foreignFlow"]), 2)
+        self.assertEqual(len(history["premiumInputs"]), 2)
+        self.assertEqual(history["errors"][0]["field"], "marketFunds")
+
+    def test_market_fund_changes_keep_explicit_text_sign_without_rate_class(self):
+        history = fetch_market_history(SignedTextMarketFundsClient())
+
+        self.assertEqual(
+            history["marketFunds"][0]["investorDepositsChange100mKrw"], -5_000
+        )
+        self.assertEqual(
+            history["marketFunds"][1]["marginFinancingChange100mKrw"], -7_854
+        )
 
 
 class ApiTests(unittest.TestCase):
@@ -432,6 +510,7 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertEqual(len(history["foreignFlow"]), 2)
             self.assertEqual(len(history["premiumInputs"]), 2)
+            self.assertEqual(len(history["marketFunds"]), 2)
         finally:
             server.shutdown()
             server.server_close()

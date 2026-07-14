@@ -21,6 +21,7 @@ from tradingview import TradingViewOvernightClient
 NASDAQ_QUOTE_URL = "https://api.nasdaq.com/api/quote/SKHY/info?assetclass=stocks"
 NAVER_STOCK_URL = "https://polling.finance.naver.com/api/realtime/domestic/stock/000660"
 NAVER_FOREIGN_FLOW_URL = "https://finance.naver.com/item/frgn.naver?code=000660&page=1"
+NAVER_MARKET_FUNDS_URL = "https://finance.naver.com/sise/sise_deposit.naver?page=1"
 NAVER_STOCK_HISTORY_URL = "https://m.stock.naver.com/api/stock/000660/price?pageSize=60&page=1"
 NAVER_FX_URL = (
     "https://api.stock.naver.com/marketindex/exchange/FX_USDKRW/prices?page=1&pageSize=1"
@@ -269,6 +270,71 @@ def _fetch_foreign_history(client):
     if not history:
         raise ValueError("Naver confirmed foreign flow history is empty")
     return sorted(history, key=lambda row: row["date"])
+
+
+def _fetch_market_funds_history(client):
+    """Return Korean market deposits and margin financing in 100m KRW."""
+    html = client.get_text(
+        NAVER_MARKET_FUNDS_URL,
+        headers={"Referer": "https://finance.naver.com/", "User-Agent": "Mozilla/5.0"},
+    )
+    table_match = re.search(
+        r'<table[^>]*summary=["\'][^"\']*증시자금동향[^"\']*["\'][^>]*>(.*?)</table>',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if table_match is None:
+        raise ValueError("Naver Korean market funds table is missing")
+
+    history = []
+    for row_match in re.finditer(
+        r"<tr[^>]*>(.*?)</tr>", table_match.group(1), flags=re.IGNORECASE | re.DOTALL
+    ):
+        cells = list(
+            re.finditer(
+                r"<td(?P<attrs>[^>]*)>(?P<body>.*?)</td>",
+                row_match.group(1),
+                flags=re.IGNORECASE | re.DOTALL,
+            )
+        )
+        if len(cells) < 5:
+            continue
+        cell_text = [" ".join(_visible_text_parts(cell.group("body"))) for cell in cells]
+        date_match = re.fullmatch(r"(\d{2})\.(\d{2})\.(\d{2})", cell_text[0])
+        if date_match is None:
+            continue
+
+        investor_deposits, deposits_change, margin_financing, financing_change = (
+            _parse_signed_integer(value) for value in cell_text[1:5]
+        )
+        if investor_deposits <= 0 or margin_financing <= 0:
+            raise ValueError("Naver Korean market fund balances are invalid")
+
+        def signed_change(value, attributes):
+            if re.search(r"\brate_down\b", attributes, flags=re.IGNORECASE):
+                return -abs(value)
+            if re.search(r"\brate_up\b", attributes, flags=re.IGNORECASE):
+                return abs(value)
+            return value
+
+        year, month, day = map(int, date_match.groups())
+        history.append(
+            {
+                "date": f"{2000 + year:04d}-{month:02d}-{day:02d}",
+                "investorDeposits100mKrw": investor_deposits,
+                "investorDepositsChange100mKrw": signed_change(
+                    deposits_change, cells[2].group("attrs")
+                ),
+                "marginFinancing100mKrw": margin_financing,
+                "marginFinancingChange100mKrw": signed_change(
+                    financing_change, cells[4].group("attrs")
+                ),
+            }
+        )
+
+    if not history:
+        raise ValueError("Naver Korean market funds table has no usable rows")
+    return sorted(history, key=lambda row: row["date"])[-20:]
 
 
 def _fetch_adr_daily_history(client):
@@ -555,10 +621,11 @@ def fetch_market_history(client=None):
     providers = {
         "foreignFlow": _fetch_foreign_history,
         "premiumInputs": _fetch_premium_history_inputs,
+        "marketFunds": _fetch_market_funds_history,
     }
-    results = {"foreignFlow": [], "premiumInputs": []}
+    results = {"foreignFlow": [], "premiumInputs": [], "marketFunds": []}
     errors = []
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         pending = {executor.submit(provider, client): key for key, provider in providers.items()}
         for future in as_completed(pending):
             key = pending[future]

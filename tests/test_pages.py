@@ -27,9 +27,11 @@ class PagesBuildTests(unittest.TestCase):
             self.assertTrue((output / "app.js").is_file())
             self.assertTrue((output / "admin-refresh.mjs").is_file())
             self.assertTrue((output / "history-charts.mjs").is_file())
+            self.assertTrue((output / "market-funds.mjs").is_file())
             self.assertEqual(snapshot["quotes"]["adr"]["symbol"], "SKHY")
             self.assertEqual(history["foreignFlow"][-1]["netShares"], -704_671)
             self.assertEqual(len(history["premiumInputs"]), 2)
+            self.assertEqual(history["marketFunds"][-1]["date"], "2026-07-10")
 
     def test_rejects_incomplete_snapshot_without_replacing_last_good_build(self):
         incomplete_snapshot = {

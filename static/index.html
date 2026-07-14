@@ -281,10 +281,65 @@
           </div>
         </section>
 
+        <section class="market-funds-section" aria-labelledby="marketFundsTitle">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">韩国市场资金</span>
+              <h2 id="marketFundsTitle">融资余额与投资者预托金</h2>
+            </div>
+            <p>韩国全市场数据 · 单位：亿韩元 · 按发布日更新</p>
+          </div>
+
+          <div class="history-grid">
+            <article class="history-card fund-card">
+              <div class="history-card-header">
+                <div>
+                  <span class="history-kicker">MARGIN FINANCING</span>
+                  <h3>韩国信用融资余额</h3>
+                </div>
+                <span class="ratio-badge">신용잔고</span>
+              </div>
+              <div class="fund-summary">
+                <span id="marginFinancingDate">等待发布数据</span>
+                <strong id="marginFinancingValue">--</strong>
+                <small id="marginFinancingChange">较前日 --</small>
+              </div>
+              <div class="history-table-wrap fund-table-wrap">
+                <table>
+                  <thead><tr><th>日期</th><th>余额（亿韩元）</th><th>较前日</th></tr></thead>
+                  <tbody id="marginFinancingTable"></tbody>
+                </table>
+              </div>
+            </article>
+
+            <article class="history-card fund-card">
+              <div class="history-card-header">
+                <div>
+                  <span class="history-kicker">INVESTOR DEPOSITS</span>
+                  <h3>韩国投资者预托金</h3>
+                </div>
+                <span class="ratio-badge">고객예탁금</span>
+              </div>
+              <div class="fund-summary">
+                <span id="investorDepositsDate">等待发布数据</span>
+                <strong id="investorDepositsValue">--</strong>
+                <small id="investorDepositsChange">较前日 --</small>
+              </div>
+              <div class="history-table-wrap fund-table-wrap">
+                <table>
+                  <thead><tr><th>日期</th><th>余额（亿韩元）</th><th>较前日</th></tr></thead>
+                  <tbody id="investorDepositsTable"></tbody>
+                </table>
+              </div>
+            </article>
+          </div>
+          <p class="market-funds-note" id="marketFundsMeta">Naver Finance · 等待韩国市场资金数据</p>
+        </section>
+
         <section class="disclosure">
           <div>
             <strong>数据说明</strong>
-            <p>美股夜盘开放时优先采用 TradingView 的 BOATS 实时成交价；其余时段采用 Nasdaq。韩股、汇率与盘中外资估算优先来自 Naver Finance。</p>
+            <p>美股夜盘开放时优先采用 TradingView 的 BOATS 实时成交价；其余时段采用 Nasdaq。韩股、汇率、盘中外资估算及韩国市场资金趋势优先来自 Naver Finance。</p>
           </div>
           <div>
             <strong>使用边界</strong>
