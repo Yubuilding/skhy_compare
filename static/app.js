@@ -1,3 +1,5 @@
+import { isLiveQuote } from "./quote-status.mjs";
+
 const elements = {
   adrPrice: document.querySelector("#adrPrice"),
   krPrice: document.querySelector("#krPrice"),
@@ -149,7 +151,7 @@ function applyQuote(quote, input, meta, marketState) {
     AFTER_HOURS: "盘后",
     CLOSED: "最新收盘",
   };
-  const isLive = quote.isRealTime && quote.marketStatus === "OPEN";
+  const isLive = isLiveQuote(quote);
   const freshness = isLive ? "实时" : "最新可得";
   const sessionLabel = sessionLabels[quote.session];
   meta.textContent = `${sessionLabel ? `${sessionLabel} · ` : ""}${freshness} · ${quote.source} · ${formatTimestamp(quote.timestamp)}`;
