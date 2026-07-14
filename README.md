@@ -10,6 +10,12 @@
 
 程序把一股韩股换算成美元，再按 ADR 比例折算为一份 ADR 的理论美元价格，并显示美股 ADR 的溢价或折价。
 
+页面还包含：
+
+- 最近约 20 个已确认交易日的外资净买卖柱状图和每日明细；
+- SKHY 上市以来可对齐交易日的 ADR 历史溢价率图；
+- 历史溢价率会随页面中的 ADR 比例输入即时重算。
+
 ## 一键运行
 
 macOS：双击 `启动SK海力士速算.command`。
@@ -45,6 +51,31 @@ macOS：双击 `启动SK海力士速算.command`。
 - 免费行情可能存在延迟；韩美市场的开闭市时间也不同。
 - BOATS 是独立 ATS 夜盘市场，流动性通常较低，报价和价差可能与 Nasdaq 常规盘明显不同。
 - 计算未计入 ADR 托管费、税费、汇兑点差及跨境转换限制，不构成投资建议。
+
+历史溢价率按同一个日历日的 Nasdaq、韩股和 USD/KRW 收盘值计算。由于韩国市场先收盘、美股后收盘，该序列适合观察相对定价变化，不代表三个价格可以同时成交。SKHY 刚上市时历史点数会比较少，之后会随交易日自动增加。
+
+## 部署到 GitHub Pages
+
+仓库包含 `.github/workflows/deploy-pages.yml`。它会在推送到 `main`、手动触发以及每 5 分钟定时触发时：
+
+1. 联网生成最新 `snapshot.json` 和 `history.json`；
+2. 把纯静态网页打包；
+3. 部署到 GitHub Pages。
+
+首次使用时，在 GitHub 仓库打开 `Settings → Pages`，把 `Source` 设为 `GitHub Actions`。GitHub Free 用户需要使用公开仓库；成功后页面地址通常是：
+
+```text
+https://<你的用户名>.github.io/<仓库名>/
+```
+
+GitHub Actions 的定时任务最快为 5 分钟一次，并可能排队延迟；外资盘中估算本身约延迟 20 分钟。因此公开站点是“定时更新”，不是逐笔行情服务器。
+
+本地可预先验证 Pages 构建：
+
+```bash
+python3 build_pages.py --output dist
+python3 -m http.server 8000 --directory dist
+```
 
 ## 测试
 

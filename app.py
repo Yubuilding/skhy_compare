@@ -21,8 +21,16 @@ from tradingview import TradingViewOvernightClient
 NASDAQ_QUOTE_URL = "https://api.nasdaq.com/api/quote/SKHY/info?assetclass=stocks"
 NAVER_STOCK_URL = "https://polling.finance.naver.com/api/realtime/domestic/stock/000660"
 NAVER_FOREIGN_FLOW_URL = "https://finance.naver.com/item/frgn.naver?code=000660&page=1"
+NAVER_STOCK_HISTORY_URL = "https://m.stock.naver.com/api/stock/000660/price?pageSize=60&page=1"
 NAVER_FX_URL = (
     "https://api.stock.naver.com/marketindex/exchange/FX_USDKRW/prices?page=1&pageSize=1"
+)
+NAVER_FX_HISTORY_URL = (
+    "https://api.stock.naver.com/marketindex/exchange/FX_USDKRW/prices?page=1&pageSize=60"
+)
+NASDAQ_HISTORY_URL = (
+    "https://api.nasdaq.com/api/quote/SKHY/historical?assetclass=stocks"
+    "&fromdate={from_date}&todate={to_date}&limit=90"
 )
 YAHOO_CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1m&range=1d"
 DATA_ERRORS = (KeyError, IndexError, TypeError, ValueError, OSError)
@@ -179,12 +187,16 @@ def _fetch_foreign_flow(client):
         r"(\d{4})\.(\d{2})\.(\d{2})\s+(\d{2}):(\d{2})",
         date_text,
     )
-    if timestamp_match is None:
-        raise ValueError("Naver foreign broker estimate timestamp is invalid")
-    timestamp = datetime(
-        *map(int, timestamp_match.groups()),
-        tzinfo=KOREA_TIMEZONE,
-    ).isoformat()
+    if timestamp_match is not None:
+        timestamp = datetime(
+            *map(int, timestamp_match.groups()),
+            tzinfo=KOREA_TIMEZONE,
+        ).isoformat()
+    else:
+        date_only_match = re.search(r"(\d{4})\.(\d{2})\.(\d{2})", date_text)
+        if date_only_match is None:
+            raise ValueError("Naver foreign broker estimate timestamp is invalid")
+        timestamp = "-".join(date_only_match.groups())
 
     page_text = " ".join(_visible_text_parts(html))
     delay_match = re.search(r"(\d+)\s*분\s*지연", page_text)
@@ -203,6 +215,109 @@ def _fetch_foreign_flow(client):
         "source": "Naver Finance",
         "method": "Top-5 foreign brokerage estimate",
     }
+
+
+def _fetch_foreign_history(client):
+    html = client.get_text(
+        NAVER_FOREIGN_FLOW_URL,
+        headers={"Referer": "https://finance.naver.com/", "User-Agent": "Mozilla/5.0"},
+    )
+    table_match = re.search(
+        r'<table[^>]*summary=["\'][^"\']*외국인 기관 순매매 거래량[^"\']*["\'][^>]*>(.*?)</table>',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if table_match is None:
+        raise ValueError("Naver confirmed foreign flow table is missing")
+
+    history = []
+    for row_match in re.finditer(
+        r"<tr[^>]*>(.*?)</tr>", table_match.group(1), flags=re.IGNORECASE | re.DOTALL
+    ):
+        parts = _visible_text_parts(row_match.group(1))
+        date_index = next(
+            (index for index, part in enumerate(parts) if re.fullmatch(r"\d{4}\.\d{2}\.\d{2}", part)),
+            None,
+        )
+        if date_index is None or date_index + 1 >= len(parts):
+            continue
+        percent_indexes = [
+            index for index, part in enumerate(parts) if re.fullmatch(r"[+\-]?\d+(?:\.\d+)?%", part)
+        ]
+        if len(percent_indexes) < 2:
+            continue
+        trading_numbers = [
+            part
+            for part in parts[percent_indexes[0] + 1 : percent_indexes[-1]]
+            if re.fullmatch(r"[+\-−]?\d[\d,]*", part)
+        ]
+        if len(trading_numbers) < 4:
+            continue
+        history.append(
+            {
+                "date": datetime.strptime(parts[date_index], "%Y.%m.%d").date().isoformat(),
+                "closePriceKrw": _parse_number(parts[date_index + 1]),
+                "tradingVolume": abs(_parse_signed_integer(trading_numbers[0])),
+                "institutionNetShares": _parse_signed_integer(trading_numbers[1]),
+                "netShares": _parse_signed_integer(trading_numbers[2]),
+                "foreignHoldShares": abs(_parse_signed_integer(trading_numbers[3])),
+                "foreignHoldRatio": float(parts[percent_indexes[-1]].rstrip("%")),
+                "isEstimate": False,
+                "source": "Naver Finance",
+            }
+        )
+    if not history:
+        raise ValueError("Naver confirmed foreign flow history is empty")
+    return sorted(history, key=lambda row: row["date"])
+
+
+def _fetch_adr_daily_history(client):
+    today = datetime.now(KOREA_TIMEZONE).date()
+    payload = client.get_json(
+        NASDAQ_HISTORY_URL.format(
+            from_date=(today - timedelta(days=120)).isoformat(),
+            to_date=today.isoformat(),
+        ),
+        headers={"Accept": "application/json", "User-Agent": "Mozilla/5.0"},
+    )
+    rows = payload["data"]["tradesTable"]["rows"] or []
+    return {
+        datetime.strptime(row["date"], "%m/%d/%Y").date().isoformat(): _parse_number(row["close"])
+        for row in rows
+    }
+
+
+def _fetch_korean_daily_history(client):
+    rows = client.get_json(NAVER_STOCK_HISTORY_URL, headers={"User-Agent": "Mozilla/5.0"})
+    return {row["localTradedAt"]: _parse_number(row["closePrice"]) for row in rows}
+
+
+def _fetch_fx_daily_history(client):
+    rows = client.get_json(NAVER_FX_HISTORY_URL, headers={"User-Agent": "Mozilla/5.0"})
+    return {row["localTradedAt"]: _parse_number(row["closePrice"]) for row in rows}
+
+
+def _fetch_premium_history_inputs(client):
+    providers = {
+        "adr": _fetch_adr_daily_history,
+        "korean": _fetch_korean_daily_history,
+        "fx": _fetch_fx_daily_history,
+    }
+    series = {}
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        pending = {executor.submit(provider, client): key for key, provider in providers.items()}
+        for future in as_completed(pending):
+            series[pending[future]] = future.result()
+    dates = sorted(set(series["adr"]) & set(series["korean"]) & set(series["fx"]))
+    return [
+        {
+            "date": date,
+            "adrPriceUsd": series["adr"][date],
+            "koreanPriceKrw": series["korean"][date],
+            "krwPerUsd": series["fx"][date],
+        }
+        for date in dates
+    ]
 
 
 def _fetch_regular_adr_quote(client):
@@ -406,7 +521,7 @@ def fetch_market_snapshot(client=None):
     }
     quotes = {}
     errors = []
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         pending = {executor.submit(provider, client): key for key, provider in providers.items()}
         for future in as_completed(pending):
             key = pending[future]
@@ -434,6 +549,30 @@ def fetch_market_snapshot(client=None):
     }
 
 
+def fetch_market_history(client=None):
+    """Fetch finalized foreign flows and date-aligned premium chart inputs."""
+    client = client or JsonHttpClient()
+    providers = {
+        "foreignFlow": _fetch_foreign_history,
+        "premiumInputs": _fetch_premium_history_inputs,
+    }
+    results = {"foreignFlow": [], "premiumInputs": []}
+    errors = []
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        pending = {executor.submit(provider, client): key for key, provider in providers.items()}
+        for future in as_completed(pending):
+            key = pending[future]
+            try:
+                results[key] = future.result()
+            except DATA_ERRORS as error:
+                errors.append({"field": key, "message": str(error)})
+    return {
+        "fetchedAt": datetime.now(timezone.utc).isoformat(),
+        **results,
+        "errors": errors,
+    }
+
+
 def create_server(host="127.0.0.1", port=8787, client=None, static_dir=None):
     """Create the local dashboard server without starting its event loop."""
     market_client = client or JsonHttpClient()
@@ -444,13 +583,16 @@ def create_server(host="127.0.0.1", port=8787, client=None, static_dir=None):
             super().__init__(*args, directory=str(asset_directory), **kwargs)
 
         def do_GET(self):
-            if urlparse(self.path).path == "/api/snapshot":
-                self._send_snapshot()
+            path = urlparse(self.path).path
+            if path == "/api/snapshot":
+                self._send_json(fetch_market_snapshot(market_client))
+                return
+            if path == "/api/history":
+                self._send_json(fetch_market_history(market_client))
                 return
             super().do_GET()
 
-        def _send_snapshot(self):
-            payload = fetch_market_snapshot(market_client)
+        def _send_json(self, payload):
             body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -460,7 +602,7 @@ def create_server(host="127.0.0.1", port=8787, client=None, static_dir=None):
             self.wfile.write(body)
 
         def log_message(self, format, *args):
-            if urlparse(self.path).path == "/api/snapshot":
+            if urlparse(self.path).path in {"/api/snapshot", "/api/history"}:
                 return
             super().log_message(format, *args)
 

@@ -3,7 +3,12 @@ import threading
 import unittest
 from urllib.request import urlopen
 
-from app import calculate_comparison, create_server, fetch_market_snapshot
+from app import (
+    calculate_comparison,
+    create_server,
+    fetch_market_history,
+    fetch_market_snapshot,
+)
 
 
 FOREIGN_FLOW_HTML = """
@@ -16,6 +21,20 @@ FOREIGN_FLOW_HTML = """
   <td><span>693,332</span></td>
 </tr>
 <p>당일 종목별 매매상위 5개 회원사 정보를 이용한 추정치임</p>
+<table summary="외국인 기관 순매매 거래량에 관한표이며 날짜별로 정보를 제공합니다.">
+  <tr>
+    <td><span>2026.07.13</span></td><td><span>1,845,000</span></td>
+    <td><span class="blind">하락</span><span>335,000</span></td><td><span>-15.37%</span></td>
+    <td><span>8,040,043</span></td><td><span>-781,727</span></td>
+    <td><span>-704,671</span></td><td><span>354,716,373</span></td><td><span>49.77%</span></td>
+  </tr>
+  <tr>
+    <td><span>2026.07.10</span></td><td><span>2,180,000</span></td>
+    <td><span class="blind">하락</span><span>6,000</span></td><td><span>-0.27%</span></td>
+    <td><span>4,827,239</span></td><td><span>204,193</span></td>
+    <td><span>-768,843</span></td><td><span>355,421,044</span></td><td><span>49.87%</span></td>
+  </tr>
+</table>
 """
 
 
@@ -103,6 +122,40 @@ class FailedRegularClosedOvernightClient(StubClient):
 class MalformedForeignFlowClient(StubClient):
     def get_text(self, url, headers=None):
         return super().get_text(url, headers).replace("79,538", "88,888")
+
+
+class ClosedForeignFlowClient(StubClient):
+    def get_text(self, url, headers=None):
+        return super().get_text(url, headers).replace(
+            "2026.07.14 13:19 <span>기준(KRX 장중)</span>",
+            "2026.07.14 <span>기준(KRX 장마감)</span>",
+        )
+
+
+class HistoryStubClient(StubClient):
+    def get_json(self, url, headers=None):
+        if "api.nasdaq.com" in url and "/historical" in url:
+            return {
+                "data": {
+                    "tradesTable": {
+                        "rows": [
+                            {"date": "07/13/2026", "close": "$152.35"},
+                            {"date": "07/10/2026", "close": "$168.01"},
+                        ]
+                    }
+                }
+            }
+        if "m.stock.naver.com/api/stock/000660/price" in url:
+            return [
+                {"localTradedAt": "2026-07-13", "closePrice": "1,845,000"},
+                {"localTradedAt": "2026-07-10", "closePrice": "2,180,000"},
+            ]
+        if "marketindex/exchange" in url and "pageSize=60" in url:
+            return [
+                {"localTradedAt": "2026-07-13", "closePrice": "1,499.50"},
+                {"localTradedAt": "2026-07-10", "closePrice": "1,502.00"},
+            ]
+        return super().get_json(url, headers)
 
 
 class YahooPostMarketClient(StubClient):
@@ -241,6 +294,13 @@ class MarketSnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot["errors"][0]["field"], "foreignFlow")
         self.assertIn("inconsistent", snapshot["errors"][0]["message"])
 
+    def test_accepts_date_only_foreign_flow_timestamp_after_market_close(self):
+        snapshot = fetch_market_snapshot(ClosedForeignFlowClient())
+
+        self.assertEqual(snapshot["foreignFlow"]["timestamp"], "2026-07-14")
+        self.assertEqual(snapshot["foreignFlow"]["marketStatus"], "CLOSED")
+        self.assertEqual(snapshot["errors"], [])
+
     def test_fetches_primary_quotes_and_calculates_comparison(self):
         snapshot = fetch_market_snapshot(StubClient())
 
@@ -322,9 +382,40 @@ class MarketSnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot["errors"], [])
 
 
+class MarketHistoryTests(unittest.TestCase):
+    def test_returns_confirmed_foreign_flow_and_aligned_premium_inputs(self):
+        history = fetch_market_history(HistoryStubClient())
+
+        self.assertEqual(
+            [row["date"] for row in history["foreignFlow"]],
+            ["2026-07-10", "2026-07-13"],
+        )
+        self.assertEqual(history["foreignFlow"][-1]["netShares"], -704_671)
+        self.assertEqual(history["foreignFlow"][-1]["institutionNetShares"], -781_727)
+        self.assertEqual(history["foreignFlow"][-1]["foreignHoldRatio"], 49.77)
+        self.assertEqual(
+            history["premiumInputs"],
+            [
+                {
+                    "date": "2026-07-10",
+                    "adrPriceUsd": 168.01,
+                    "koreanPriceKrw": 2_180_000.0,
+                    "krwPerUsd": 1502.0,
+                },
+                {
+                    "date": "2026-07-13",
+                    "adrPriceUsd": 152.35,
+                    "koreanPriceKrw": 1_845_000.0,
+                    "krwPerUsd": 1499.5,
+                },
+            ],
+        )
+        self.assertEqual(history["errors"], [])
+
+
 class ApiTests(unittest.TestCase):
     def test_snapshot_endpoint_returns_market_data(self):
-        server = create_server(port=0, client=StubClient())
+        server = create_server(port=0, client=HistoryStubClient())
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         try:
@@ -335,6 +426,12 @@ class ApiTests(unittest.TestCase):
             self.assertEqual(response.status, 200)
             self.assertEqual(payload["quotes"]["adr"]["symbol"], "SKHY")
             self.assertIn("no-store", response.headers["Cache-Control"])
+
+            with urlopen(f"http://{host}:{port}/api/history", timeout=2) as response:
+                history = json.load(response)
+            self.assertEqual(response.status, 200)
+            self.assertEqual(len(history["foreignFlow"]), 2)
+            self.assertEqual(len(history["premiumInputs"]), 2)
         finally:
             server.shutdown()
             server.server_close()

@@ -161,6 +161,7 @@ input {
 .explain-card,
 .quote-card,
 .foreign-flow-panel,
+.history-card,
 .result-panel {
   border: 1px solid rgba(25, 60, 74, 0.12);
   box-shadow: var(--shadow);
@@ -757,6 +758,206 @@ input {
   display: block;
 }
 
+.history-section {
+  padding-top: 76px;
+}
+
+.history-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+
+.history-card {
+  min-width: 0;
+  padding: 26px;
+  border-radius: 20px;
+  background: var(--surface);
+}
+
+.history-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.history-kicker {
+  color: var(--muted);
+  font-size: 8px;
+  font-weight: 850;
+  letter-spacing: 0.15em;
+}
+
+.history-card h3 {
+  margin: 6px 0 0;
+  font-size: 18px;
+  letter-spacing: -0.025em;
+}
+
+.chart-legend {
+  display: flex;
+  gap: 11px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.chart-legend i {
+  width: 7px;
+  height: 7px;
+  border-radius: 2px;
+}
+
+.chart-legend .buy i {
+  background: var(--positive);
+}
+
+.chart-legend .sell i {
+  background: var(--negative);
+}
+
+.ratio-badge {
+  padding: 6px 9px;
+  border-radius: 99px;
+  color: #604378;
+  background: #eee6f6;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.chart-canvas {
+  display: grid;
+  place-items: center;
+  min-height: 245px;
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.chart-canvas svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.chart-zero {
+  stroke: #c9ccc7;
+  stroke-dasharray: 4 4;
+  stroke-width: 1;
+}
+
+.chart-axis-label {
+  fill: var(--muted);
+  font-size: 9px;
+}
+
+.premium-line {
+  fill: none;
+  stroke: var(--navy-2);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.premium-point {
+  fill: var(--surface);
+  stroke: var(--navy-2);
+  stroke-width: 3;
+}
+
+.flow-bar.buy {
+  fill: var(--positive);
+}
+
+.flow-bar.sell {
+  fill: var(--negative);
+}
+
+.flow-bar.flat {
+  fill: #9da4a2;
+}
+
+.history-meta,
+.chart-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.chart-note {
+  padding-top: 11px;
+  border-top: 1px solid var(--line);
+}
+
+.history-error {
+  margin-bottom: 14px;
+  padding: 12px 15px;
+  border: 1px solid #e1a091;
+  border-radius: 12px;
+  color: #7e2f22;
+  background: #fff0eb;
+  font-size: 11px;
+}
+
+.history-details {
+  margin-top: 15px;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+}
+
+.history-details summary {
+  color: var(--navy-2);
+  font-size: 10px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.history-table-wrap {
+  max-height: 260px;
+  margin-top: 12px;
+  overflow: auto;
+}
+
+.history-table-wrap table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.history-table-wrap th,
+.history-table-wrap td {
+  padding: 8px 6px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+}
+
+.history-table-wrap th:first-child,
+.history-table-wrap td:first-child {
+  text-align: left;
+}
+
+.history-table-wrap th {
+  color: var(--muted);
+  font-weight: 700;
+}
+
+.history-table-wrap td.buy {
+  color: var(--positive);
+}
+
+.history-table-wrap td.sell {
+  color: var(--negative);
+}
+
 .result-item span {
   color: var(--muted);
   font-size: 10px;
@@ -820,6 +1021,10 @@ footer {
     grid-template-columns: 1fr 1fr;
   }
 
+  .history-grid {
+    grid-template-columns: 1fr;
+  }
+
   .quote-card:last-child {
     grid-column: 1 / -1;
   }
@@ -876,6 +1081,10 @@ footer {
 
   .section-block {
     padding: 60px 0;
+  }
+
+  .history-section {
+    padding-top: 58px;
   }
 
   .section-heading {

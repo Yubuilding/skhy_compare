@@ -5,14 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light" />
     <meta name="theme-color" content="#f4f1eb" />
+    <meta name="data-mode" content="local" />
     <title>SK 海力士 ADR 价格速算</title>
-    <link rel="stylesheet" href="/style.css" />
-    <script src="/app.js" type="module"></script>
+    <link rel="stylesheet" href="./style.css" />
+    <script src="./app.js" type="module"></script>
   </head>
   <body>
     <div class="page-shell">
       <header class="topbar">
-        <a class="brand" href="/" aria-label="返回首页">
+        <a class="brand" href="./" aria-label="返回首页">
           <span class="brand-mark">SK</span>
           <span>
             <strong>海力士价格速算</strong>
@@ -212,6 +213,58 @@
               <strong id="pricingStateResult">--</strong>
               <small id="pricingStateNote">等待完整数据</small>
             </div>
+          </div>
+        </section>
+
+        <section class="history-section" aria-labelledby="historyTitle">
+          <div class="section-heading">
+            <div>
+              <span class="eyebrow">历史观察</span>
+              <h2 id="historyTitle">外资流向与 ADR 溢价轨迹</h2>
+            </div>
+            <p>外资使用已确认日数据；溢价率按同日三地收盘数据对齐。</p>
+          </div>
+
+          <div class="history-error" id="historyError" role="status" hidden></div>
+          <div class="history-grid">
+            <article class="history-card">
+              <div class="history-card-header">
+                <div>
+                  <span class="history-kicker">FOREIGN FLOW</span>
+                  <h3>历史外资净买卖</h3>
+                </div>
+                <div class="chart-legend">
+                  <span class="buy"><i></i>净买入</span>
+                  <span class="sell"><i></i>净卖出</span>
+                </div>
+              </div>
+              <div class="chart-canvas" id="foreignFlowChart">正在获取历史数据</div>
+              <p class="history-meta" id="foreignHistoryMeta">Naver Finance · 等待数据</p>
+              <details class="history-details">
+                <summary>查看每日明细</summary>
+                <div class="history-table-wrap">
+                  <table>
+                    <thead>
+                      <tr><th>日期</th><th>外资净买卖</th><th>机构净买卖</th><th>外资持股比</th></tr>
+                    </thead>
+                    <tbody id="foreignHistoryTable"></tbody>
+                  </table>
+                </div>
+              </details>
+            </article>
+
+            <article class="history-card">
+              <div class="history-card-header">
+                <div>
+                  <span class="history-kicker">ADR PREMIUM</span>
+                  <h3>历史溢价率</h3>
+                </div>
+                <span class="ratio-badge" id="premiumChartRatio">比例 1:10</span>
+              </div>
+              <div class="chart-canvas" id="premiumHistoryChart">正在对齐历史收盘数据</div>
+              <p class="history-meta" id="premiumHistoryMeta">Nasdaq + Naver Finance · 等待数据</p>
+              <p class="chart-note">韩美市场收盘时间不同；该图用于观察相对定价轨迹，不代表可同步成交的套利价格。</p>
+            </article>
           </div>
         </section>
 

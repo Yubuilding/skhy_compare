@@ -1,5 +1,9 @@
 import { isLiveQuote } from "./quote-status.mjs";
 import { buildForeignFlowView } from "./foreign-flow.mjs";
+import {
+  renderForeignFlowChart,
+  renderPremiumChart,
+} from "./history-charts.mjs";
 
 const elements = {
   adrPrice: document.querySelector("#adrPrice"),
@@ -36,6 +40,13 @@ const elements = {
   foreignBuyShares: document.querySelector("#foreignBuyShares"),
   foreignSellShares: document.querySelector("#foreignSellShares"),
   foreignFlowMeta: document.querySelector("#foreignFlowMeta"),
+  historyError: document.querySelector("#historyError"),
+  foreignFlowChart: document.querySelector("#foreignFlowChart"),
+  premiumHistoryChart: document.querySelector("#premiumHistoryChart"),
+  foreignHistoryMeta: document.querySelector("#foreignHistoryMeta"),
+  premiumHistoryMeta: document.querySelector("#premiumHistoryMeta"),
+  premiumChartRatio: document.querySelector("#premiumChartRatio"),
+  foreignHistoryTable: document.querySelector("#foreignHistoryTable"),
 };
 
 const marketInputs = [elements.adrPrice, elements.krPrice, elements.fxRate];
@@ -43,6 +54,8 @@ let hasManualMarketInput = false;
 let hasManualRatio = false;
 let marketInputRevision = 0;
 let requestRevision = 0;
+let historyData = null;
+const dataMode = document.querySelector('meta[name="data-mode"]')?.content || "local";
 
 const usd = new Intl.NumberFormat("zh-CN", {
   style: "currency",
@@ -93,6 +106,11 @@ function formatTimestamp(value) {
     });
   }
   return value;
+}
+
+function dataEndpoint(name) {
+  const path = dataMode === "static" ? `./data/${name}.json` : `/api/${name}`;
+  return `${path}?t=${Date.now()}`;
 }
 
 function resetResult() {
@@ -245,6 +263,77 @@ function applySnapshotStatus(snapshot, manualInputPreserved = false) {
     : "<i></i> 最新数据已更新";
 }
 
+function renderPremiumHistory() {
+  if (!historyData) return;
+  const ratio = numericValue(elements.adrRatio);
+  const series = renderPremiumChart(
+    elements.premiumHistoryChart,
+    historyData.premiumInputs,
+    ratio,
+  );
+  elements.premiumChartRatio.textContent = ratio ? `比例 1:${ratio}` : "比例无效";
+  elements.premiumHistoryMeta.textContent = series.length
+    ? `Nasdaq + Naver Finance · ${series.length} 个同日收盘点 · 随比例联动`
+    : "暂无可对齐的 SKHY 历史收盘数据";
+}
+
+function renderForeignHistoryTable(rows) {
+  const formatter = new Intl.NumberFormat("zh-CN");
+  elements.foreignHistoryTable.replaceChildren();
+  rows.slice().reverse().forEach((row) => {
+    const tr = document.createElement("tr");
+    const foreignDirection = row.netShares >= 0 ? "+" : "−";
+    const institutionDirection = row.institutionNetShares >= 0 ? "+" : "−";
+    const values = [
+      row.date,
+      `${foreignDirection}${formatter.format(Math.abs(row.netShares))}`,
+      `${institutionDirection}${formatter.format(Math.abs(row.institutionNetShares))}`,
+      `${Number(row.foreignHoldRatio).toFixed(2)}%`,
+    ];
+    values.forEach((value, index) => {
+      const td = document.createElement("td");
+      td.textContent = value;
+      if (index === 1) td.className = row.netShares >= 0 ? "buy" : "sell";
+      tr.append(td);
+    });
+    elements.foreignHistoryTable.append(tr);
+  });
+}
+
+function applyHistory(history) {
+  historyData = history;
+  const flowRows = renderForeignFlowChart(elements.foreignFlowChart, history.foreignFlow);
+  renderForeignHistoryTable(flowRows);
+  elements.foreignHistoryMeta.textContent = flowRows.length
+    ? `Naver Finance · 最近 ${flowRows.length} 个已确认交易日`
+    : "Naver Finance · 暂无已确认历史数据";
+  renderPremiumHistory();
+
+  if (history.errors.length) {
+    const labels = history.errors.map((item) => ({
+      foreignFlow: "历史外资",
+      premiumInputs: "历史溢价",
+    })[item.field] || item.field);
+    elements.historyError.textContent = `${labels.join("、")}数据暂时不可用，其他图表仍可查看。`;
+    elements.historyError.hidden = false;
+  } else {
+    elements.historyError.hidden = true;
+  }
+}
+
+async function loadHistory() {
+  try {
+    const response = await fetch(dataEndpoint("history"), { cache: "no-store" });
+    if (!response.ok) throw new Error(`服务器返回 ${response.status}`);
+    applyHistory(await response.json());
+  } catch (error) {
+    elements.historyError.textContent = `历史数据获取失败：${error.message}`;
+    elements.historyError.hidden = false;
+    elements.foreignFlowChart.textContent = "历史外资数据暂不可用";
+    elements.premiumHistoryChart.textContent = "历史溢价数据暂不可用";
+  }
+}
+
 function markManual(input) {
   hasManualMarketInput = true;
   marketInputRevision += 1;
@@ -267,7 +356,7 @@ async function loadSnapshot({ manualRefresh = false } = {}) {
   elements.errorBanner.hidden = true;
 
   try {
-    const response = await fetch(`/api/snapshot?t=${Date.now()}`, { cache: "no-store" });
+    const response = await fetch(dataEndpoint("snapshot"), { cache: "no-store" });
     if (!response.ok) throw new Error(`服务器返回 ${response.status}`);
     const snapshot = await response.json();
 
@@ -310,10 +399,18 @@ marketInputs.forEach((input) => {
 elements.adrRatio.addEventListener("input", () => {
   hasManualRatio = true;
   calculate();
+  renderPremiumHistory();
 });
-elements.refreshButton.addEventListener("click", () => loadSnapshot({ manualRefresh: true }));
+elements.refreshButton.addEventListener("click", () => {
+  loadSnapshot({ manualRefresh: true });
+  loadHistory();
+});
 
 loadSnapshot();
+loadHistory();
 window.setInterval(() => {
   if (!document.hidden) loadSnapshot();
 }, 60_000);
+window.setInterval(() => {
+  if (!document.hidden) loadHistory();
+}, 5 * 60_000);
