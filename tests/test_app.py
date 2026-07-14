@@ -6,6 +6,19 @@ from urllib.request import urlopen
 from app import calculate_comparison, create_server, fetch_market_snapshot
 
 
+FOREIGN_FLOW_HTML = """
+<em class="date">2026.07.14 13:19 <span>기준(KRX 장중)</span></em>
+<h4><strong>거래원정보 <em>(<span>20</span>분 지연)</em></strong></h4>
+<tr class="total">
+  <td><span>외국계추정합</span></td>
+  <td><span>613,794</span></td>
+  <td><span>79,538</span></td>
+  <td><span>693,332</span></td>
+</tr>
+<p>당일 종목별 매매상위 5개 회원사 정보를 이용한 추정치임</p>
+"""
+
+
 class StubClient:
     def get_json(self, url, headers=None):
         if "api.nasdaq.com" in url:
@@ -31,6 +44,11 @@ class StubClient:
             }
         if "marketindex/exchange" in url:
             return [{"closePrice": "1,492.30", "localTradedAt": "2026-07-13"}]
+        raise AssertionError(f"Unexpected URL: {url}")
+
+    def get_text(self, url, headers=None):
+        if "finance.naver.com/item/frgn.naver" in url:
+            return FOREIGN_FLOW_HTML
         raise AssertionError(f"Unexpected URL: {url}")
 
     def get_overnight_quote(self, symbol):
@@ -80,6 +98,11 @@ class FailedRegularClosedOvernightClient(StubClient):
         ):
             raise OSError("Regular quote temporarily unavailable")
         return super().get_json(url, headers)
+
+
+class MalformedForeignFlowClient(StubClient):
+    def get_text(self, url, headers=None):
+        return super().get_text(url, headers).replace("79,538", "88,888")
 
 
 class YahooPostMarketClient(StubClient):
@@ -198,6 +221,26 @@ class ComparisonTests(unittest.TestCase):
 
 
 class MarketSnapshotTests(unittest.TestCase):
+    def test_includes_todays_intraday_foreign_broker_flow_estimate(self):
+        snapshot = fetch_market_snapshot(StubClient())
+
+        flow = snapshot["foreignFlow"]
+        self.assertEqual(flow["netShares"], 79_538)
+        self.assertEqual(flow["buyShares"], 693_332)
+        self.assertEqual(flow["sellShares"], 613_794)
+        self.assertEqual(flow["direction"], "NET_BUY")
+        self.assertEqual(flow["timestamp"], "2026-07-14T13:19:00+09:00")
+        self.assertEqual(flow["delayMinutes"], 20)
+        self.assertTrue(flow["isEstimate"])
+
+    def test_rejects_inconsistent_flow_without_breaking_price_comparison(self):
+        snapshot = fetch_market_snapshot(MalformedForeignFlowClient())
+
+        self.assertIsNone(snapshot["foreignFlow"])
+        self.assertIsNotNone(snapshot["comparison"])
+        self.assertEqual(snapshot["errors"][0]["field"], "foreignFlow")
+        self.assertIn("inconsistent", snapshot["errors"][0]["message"])
+
     def test_fetches_primary_quotes_and_calculates_comparison(self):
         snapshot = fetch_market_snapshot(StubClient())
 

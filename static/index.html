@@ -72,6 +72,37 @@
 
         <div class="error-banner" id="errorBanner" role="alert" hidden></div>
 
+        <section class="foreign-flow-panel unavailable" id="foreignFlowPanel" aria-labelledby="foreignFlowTitle">
+          <div class="flow-intro">
+            <div class="quote-topline">
+              <span class="market-tag kr">KOSPI · 000660</span>
+              <span class="market-state" id="foreignFlowStatus">正在获取</span>
+            </div>
+            <span class="eyebrow">盘中资金观察</span>
+            <h2 id="foreignFlowTitle">今日韩股外资流向</h2>
+            <p>根据当日成交量前五家外资券商席位，观察 SK 海力士的估算净流向。</p>
+          </div>
+
+          <div class="flow-reading">
+            <div class="flow-net">
+              <span id="foreignFlowDirection">暂不可用</span>
+              <strong id="foreignNetShares">--</strong>
+              <small>外资券商盘中估算净股数</small>
+            </div>
+            <div class="flow-breakdown">
+              <div>
+                <span>估算买入</span>
+                <strong id="foreignBuyShares">--</strong>
+              </div>
+              <div>
+                <span>估算卖出</span>
+                <strong id="foreignSellShares">--</strong>
+              </div>
+            </div>
+            <p class="flow-meta" id="foreignFlowMeta">等待 Naver Finance 数据</p>
+          </div>
+        </section>
+
         <section class="section-block" aria-labelledby="inputsTitle">
           <div class="section-heading">
             <div>
@@ -187,11 +218,11 @@
         <section class="disclosure">
           <div>
             <strong>数据说明</strong>
-            <p>美股夜盘开放时优先采用 TradingView 的 BOATS 实时成交价；其余时段采用 Nasdaq。韩股与汇率优先来自 Naver Finance，失败时尝试 Yahoo Finance。</p>
+            <p>美股夜盘开放时优先采用 TradingView 的 BOATS 实时成交价；其余时段采用 Nasdaq。韩股、汇率与盘中外资估算优先来自 Naver Finance。</p>
           </div>
           <div>
             <strong>使用边界</strong>
-            <p>BOATS 夜盘为美国东部时间 20:00–04:00 的 ATS 市场，流动性和价差可能与常规盘显著不同。免费行情可能延迟，且未计入托管费、税费、点差、跨境转换限制。本工具仅供价格观察，不构成投资建议。</p>
+            <p>外资流向是成交量前五家外资券商席位的盘中估算，约延迟 20 分钟，不等于 KRX 收盘后的最终外资净买卖。其他免费行情也可能延迟；本工具仅供价格观察，不构成投资建议。</p>
           </div>
         </section>
       </main>

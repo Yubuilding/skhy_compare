@@ -4,10 +4,12 @@
 import argparse
 import json
 import math
+import re
 import threading
 import webbrowser
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
+from html.parser import HTMLParser
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import quote, urlparse
@@ -18,6 +20,7 @@ from tradingview import TradingViewOvernightClient
 
 NASDAQ_QUOTE_URL = "https://api.nasdaq.com/api/quote/SKHY/info?assetclass=stocks"
 NAVER_STOCK_URL = "https://polling.finance.naver.com/api/realtime/domestic/stock/000660"
+NAVER_FOREIGN_FLOW_URL = "https://finance.naver.com/item/frgn.naver?code=000660&page=1"
 NAVER_FX_URL = (
     "https://api.stock.naver.com/marketindex/exchange/FX_USDKRW/prices?page=1&pageSize=1"
 )
@@ -25,6 +28,25 @@ YAHOO_CHART_URL = "https://query2.finance.yahoo.com/v8/finance/chart/{symbol}?in
 DATA_ERRORS = (KeyError, IndexError, TypeError, ValueError, OSError)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 DEFAULT_ADRS_PER_KOREAN_SHARE = 10
+KOREA_TIMEZONE = timezone(timedelta(hours=9))
+
+
+class _VisibleTextParser(HTMLParser):
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.parts = []
+
+    def handle_data(self, data):
+        value = data.strip()
+        if value:
+            self.parts.append(value)
+
+
+def _visible_text_parts(fragment):
+    parser = _VisibleTextParser()
+    parser.feed(fragment)
+    parser.close()
+    return parser.parts
 
 
 class JsonHttpClient:
@@ -46,6 +68,17 @@ class JsonHttpClient:
         with urlopen(request, timeout=self.timeout) as response:
             charset = response.headers.get_content_charset() or "utf-8"
             return json.loads(response.read().decode(charset))
+
+    def get_text(self, url, headers=None):
+        request_headers = {
+            "Accept": "text/html,application/xhtml+xml",
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) SKHY-Compare/1.0",
+        }
+        request_headers.update(headers or {})
+        request = Request(url, headers=request_headers)
+        with urlopen(request, timeout=self.timeout) as response:
+            charset = response.headers.get_content_charset() or "utf-8"
+            return response.read().decode(charset, errors="replace")
 
     def get_overnight_quote(self, symbol):
         return self.overnight_client.get_quote(symbol)
@@ -95,6 +128,81 @@ def _parse_number(value):
     if not math.isfinite(parsed) or parsed <= 0:
         raise ValueError("Market value must be a finite positive number")
     return parsed
+
+
+def _parse_signed_integer(value):
+    normalized = str(value).replace(",", "").replace("+", "").replace("−", "-").strip()
+    if not re.fullmatch(r"-?\d+", normalized):
+        raise ValueError("Market flow value is not an integer")
+    return int(normalized)
+
+
+def _fetch_foreign_flow(client):
+    html = client.get_text(
+        NAVER_FOREIGN_FLOW_URL,
+        headers={"Referer": "https://finance.naver.com/", "User-Agent": "Mozilla/5.0"},
+    )
+    total_row = None
+    for match in re.finditer(
+        r'<tr[^>]*class=["\'][^"\']*\btotal\b[^"\']*["\'][^>]*>(.*?)</tr>',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    ):
+        if "외국계추정합" in match.group(1):
+            total_row = match.group(1)
+            break
+    if total_row is None:
+        raise ValueError("Naver foreign broker estimate row is missing")
+
+    numeric_parts = [
+        part
+        for part in _visible_text_parts(total_row)
+        if re.fullmatch(r"[+\-−]?\d[\d,]*", part)
+    ]
+    if len(numeric_parts) < 3:
+        raise ValueError("Naver foreign broker estimate values are incomplete")
+    sell_shares, net_shares, buy_shares = map(_parse_signed_integer, numeric_parts[:3])
+    sell_shares = abs(sell_shares)
+    buy_shares = abs(buy_shares)
+    if buy_shares - sell_shares != net_shares:
+        raise ValueError("Naver foreign broker estimate values are inconsistent")
+
+    date_match = re.search(
+        r'class=["\']date["\'][^>]*>(.*?)</em>',
+        html,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if date_match is None:
+        raise ValueError("Naver foreign broker estimate timestamp is missing")
+    date_text = " ".join(_visible_text_parts(date_match.group(1)))
+    timestamp_match = re.search(
+        r"(\d{4})\.(\d{2})\.(\d{2})\s+(\d{2}):(\d{2})",
+        date_text,
+    )
+    if timestamp_match is None:
+        raise ValueError("Naver foreign broker estimate timestamp is invalid")
+    timestamp = datetime(
+        *map(int, timestamp_match.groups()),
+        tzinfo=KOREA_TIMEZONE,
+    ).isoformat()
+
+    page_text = " ".join(_visible_text_parts(html))
+    delay_match = re.search(r"(\d+)\s*분\s*지연", page_text)
+    delay_minutes = int(delay_match.group(1)) if delay_match else 20
+    direction = "NET_BUY" if net_shares > 0 else "NET_SELL" if net_shares < 0 else "FLAT"
+    return {
+        "symbol": "000660",
+        "netShares": net_shares,
+        "buyShares": buy_shares,
+        "sellShares": sell_shares,
+        "direction": direction,
+        "timestamp": timestamp,
+        "marketStatus": "OPEN" if "KRX 장중" in date_text else "CLOSED",
+        "delayMinutes": delay_minutes,
+        "isEstimate": True,
+        "source": "Naver Finance",
+        "method": "Top-5 foreign brokerage estimate",
+    }
 
 
 def _fetch_regular_adr_quote(client):
@@ -288,12 +396,13 @@ def _yahoo_timestamp(meta, field="regularMarketTime"):
 
 
 def fetch_market_snapshot(client=None):
-    """Fetch all three market inputs and return a comparison snapshot."""
+    """Fetch market inputs and the latest foreign flow estimate."""
     client = client or JsonHttpClient()
     providers = {
         "adr": _fetch_adr_quote,
         "koreanShare": _fetch_korean_quote,
         "fx": _fetch_fx_quote,
+        "foreignFlow": _fetch_foreign_flow,
     }
     quotes = {}
     errors = []
@@ -306,8 +415,9 @@ def fetch_market_snapshot(client=None):
             except DATA_ERRORS as error:
                 errors.append({"field": key, "message": str(error)})
 
+    foreign_flow = quotes.pop("foreignFlow", None)
     comparison = None
-    if len(quotes) == 3:
+    if all(field in quotes for field in ("adr", "koreanShare", "fx")):
         comparison = calculate_comparison(
             quotes["adr"]["price"],
             quotes["koreanShare"]["price"],
@@ -318,6 +428,7 @@ def fetch_market_snapshot(client=None):
         "fetchedAt": datetime.now(timezone.utc).isoformat(),
         "ratio": DEFAULT_ADRS_PER_KOREAN_SHARE,
         "quotes": quotes,
+        "foreignFlow": foreign_flow,
         "comparison": comparison,
         "errors": errors,
     }

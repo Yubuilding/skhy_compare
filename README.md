@@ -5,6 +5,7 @@
 - Nasdaq `SKHY` ADR 美元价格；
 - 美国东部时间 20:00–04:00 的 `BOATS:SKHY` 夜盘价格；
 - KOSPI `000660` 韩元价格；
+- SK 海力士韩股当日外资券商盘中估算流向；
 - `USD/KRW`（1 美元兑韩元）汇率。
 
 程序把一股韩股换算成美元，再按 ADR 比例折算为一份 ADR 的理论美元价格，并显示美股 ADR 的溢价或折价。
@@ -38,7 +39,9 @@ macOS：双击 `启动SK海力士速算.command`。
 - ADR 常规盘：优先 Nasdaq；失败时尝试 Yahoo Finance。
 - ADR 夜盘：TradingView / Blue Ocean ATS（BOATS）实时成交价。
 - 韩股和汇率：优先 Naver Finance；失败时尝试 Yahoo Finance。
+- 韩股外资流向：Naver Finance“投资者买卖趋势”中的当日前五家外资券商席位估算。
 - 夜盘开放时，溢价率自动使用 BOATS 夜盘价；夜盘关闭或取数失败时自动回退常规盘/最新可得价。
+- 外资流向约延迟 20 分钟，会显示估算买入、估算卖出和净流向；它不是 KRX 收盘后的最终外资净买卖数据。
 - 免费行情可能存在延迟；韩美市场的开闭市时间也不同。
 - BOATS 是独立 ATS 夜盘市场，流动性通常较低，报价和价差可能与 Nasdaq 常规盘明显不同。
 - 计算未计入 ADR 托管费、税费、汇兑点差及跨境转换限制，不构成投资建议。
@@ -47,4 +50,5 @@ macOS：双击 `启动SK海力士速算.command`。
 
 ```bash
 python3 -m unittest discover -s tests
+node --test tests/*.mjs
 ```

@@ -1,4 +1,5 @@
 import { isLiveQuote } from "./quote-status.mjs";
+import { buildForeignFlowView } from "./foreign-flow.mjs";
 
 const elements = {
   adrPrice: document.querySelector("#adrPrice"),
@@ -28,6 +29,13 @@ const elements = {
   fxMeta: document.querySelector("#fxMeta"),
   adrMarketState: document.querySelector("#adrMarketState"),
   krMarketState: document.querySelector("#krMarketState"),
+  foreignFlowPanel: document.querySelector("#foreignFlowPanel"),
+  foreignFlowStatus: document.querySelector("#foreignFlowStatus"),
+  foreignFlowDirection: document.querySelector("#foreignFlowDirection"),
+  foreignNetShares: document.querySelector("#foreignNetShares"),
+  foreignBuyShares: document.querySelector("#foreignBuyShares"),
+  foreignSellShares: document.querySelector("#foreignSellShares"),
+  foreignFlowMeta: document.querySelector("#foreignFlowMeta"),
 };
 
 const marketInputs = [elements.adrPrice, elements.krPrice, elements.fxRate];
@@ -187,6 +195,56 @@ function applyOvernightQuote(adrQuote) {
   elements.overnightMeta.textContent = `${status} · ${formatTimestamp(overnight.timestamp)}`;
 }
 
+function applyForeignFlow(flow) {
+  const view = buildForeignFlowView(flow);
+  elements.foreignFlowPanel.classList.remove("buy", "sell", "flat", "unavailable");
+  elements.foreignFlowPanel.classList.add(view.tone);
+  elements.foreignFlowStatus.textContent = view.available ? view.freshnessLabel : "数据不可用";
+  elements.foreignFlowDirection.textContent = view.directionLabel;
+  elements.foreignNetShares.textContent = view.netText;
+  elements.foreignBuyShares.textContent = view.buyText;
+  elements.foreignSellShares.textContent = view.sellText;
+  elements.foreignFlowMeta.textContent = view.available
+    ? `${flow.source} · 页面时间 ${formatTimestamp(flow.timestamp)} · 非最终结算值`
+    : "本次自动获取失败，请稍后刷新";
+}
+
+function applySnapshotStatus(snapshot, manualInputPreserved = false) {
+  const fetched = new Date(snapshot.fetchedAt);
+  elements.refreshTime.textContent = `更新于 ${fetched.toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })}`;
+
+  if (snapshot.errors.length) {
+    const quoteErrors = snapshot.errors.filter((item) => item.field !== "foreignFlow");
+    const missing = quoteErrors.map((item) => ({
+      adr: "美股 ADR",
+      koreanShare: "韩股",
+      fx: "汇率",
+    })[item.field] || item.field);
+    const messages = [];
+    if (missing.length) {
+      messages.push(`${missing.join("、")}自动获取失败，可在对应卡片手动输入。`);
+    }
+    if (snapshot.errors.some((item) => item.field === "foreignFlow")) {
+      messages.push("韩股外资流向获取失败，请稍后刷新。");
+    }
+    elements.errorBanner.textContent = messages.join(" ");
+    elements.errorBanner.hidden = false;
+    elements.overallStatus.className = "live-pill error";
+    elements.overallStatus.innerHTML = "<i></i> 部分数据失败";
+    return;
+  }
+
+  elements.overallStatus.className = "live-pill ready";
+  elements.overallStatus.innerHTML = manualInputPreserved
+    ? "<i></i> 外资流向已更新 · 保留手动行情"
+    : "<i></i> 最新数据已更新";
+}
+
 function markManual(input) {
   hasManualMarketInput = true;
   marketInputRevision += 1;
@@ -200,7 +258,6 @@ function markManual(input) {
 }
 
 async function loadSnapshot({ manualRefresh = false } = {}) {
-  if (!manualRefresh && hasManualMarketInput) return;
   const thisRequest = ++requestRevision;
   const inputRevisionAtStart = marketInputRevision;
   elements.refreshButton.disabled = true;
@@ -215,9 +272,13 @@ async function loadSnapshot({ manualRefresh = false } = {}) {
     const snapshot = await response.json();
 
     if (thisRequest !== requestRevision) return;
-    if (marketInputRevision !== inputRevisionAtStart) {
-      elements.overallStatus.className = "live-pill ready";
-      elements.overallStatus.innerHTML = "<i></i> 已保留手动输入";
+    applyForeignFlow(snapshot.foreignFlow);
+    const preserveManualMarketInput = (
+      (!manualRefresh && hasManualMarketInput)
+      || marketInputRevision !== inputRevisionAtStart
+    );
+    if (preserveManualMarketInput) {
+      applySnapshotStatus(snapshot, true);
       return;
     }
 
@@ -230,29 +291,7 @@ async function loadSnapshot({ manualRefresh = false } = {}) {
     applyQuote(snapshot.quotes.koreanShare, elements.krPrice, elements.krMeta, elements.krMarketState);
     applyQuote(snapshot.quotes.fx, elements.fxRate, elements.fxMeta);
     calculate();
-
-    const fetched = new Date(snapshot.fetchedAt);
-    elements.refreshTime.textContent = `更新于 ${fetched.toLocaleTimeString("zh-CN", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    })}`;
-
-    if (snapshot.errors.length) {
-      const missing = snapshot.errors.map((item) => ({
-        adr: "美股 ADR",
-        koreanShare: "韩股",
-        fx: "汇率",
-      })[item.field] || item.field);
-      elements.errorBanner.textContent = `${missing.join("、")}自动获取失败。可直接在对应卡片手动输入后继续计算。`;
-      elements.errorBanner.hidden = false;
-      elements.overallStatus.className = "live-pill error";
-      elements.overallStatus.innerHTML = "<i></i> 部分数据失败";
-    } else {
-      elements.overallStatus.className = "live-pill ready";
-      elements.overallStatus.innerHTML = "<i></i> 最新数据已更新";
-    }
+    applySnapshotStatus(snapshot);
   } catch (error) {
     elements.errorBanner.textContent = `暂时无法获取行情：${error.message}。请检查网络，或手动填写三项数据。`;
     elements.errorBanner.hidden = false;
