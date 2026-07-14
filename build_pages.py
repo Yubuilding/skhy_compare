@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import math
 import shutil
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -20,11 +21,45 @@ def _write_json(path, payload):
     )
 
 
+def _validate_snapshot(snapshot):
+    """Refuse to publish when the premium calculator lacks critical inputs."""
+    quotes = snapshot.get("quotes") or {}
+    missing = []
+    for field in ("adr", "koreanShare", "fx"):
+        price = (quotes.get(field) or {}).get("price")
+        if not isinstance(price, (int, float)) or not math.isfinite(price) or price <= 0:
+            missing.append(field)
+
+    comparison = snapshot.get("comparison")
+    if not isinstance(comparison, dict):
+        missing.append("comparison")
+    else:
+        for field in ("fair_adr_usd", "premium_percent"):
+            value = comparison.get(field)
+            if not isinstance(value, (int, float)) or not math.isfinite(value):
+                missing.append(f"comparison.{field}")
+
+    if missing:
+        raise RuntimeError(
+            "Refusing to publish without critical market data: " + ", ".join(missing)
+        )
+
+
 def build_pages(output_dir, client=None):
     """Copy the frontend and generate static snapshot/history JSON files."""
     output = Path(output_dir).resolve()
     if output in {Path("/"), Path.home().resolve(), PROJECT_DIR.resolve()}:
         raise ValueError("Refusing to replace an unsafe Pages output directory")
+
+    market_client = client or JsonHttpClient()
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        snapshot_future = executor.submit(fetch_market_snapshot, market_client)
+        history_future = executor.submit(fetch_market_history, market_client)
+        snapshot = snapshot_future.result()
+        history = history_future.result()
+
+    _validate_snapshot(snapshot)
+
     if output.exists():
         shutil.rmtree(output)
     shutil.copytree(STATIC_DIR, output)
@@ -38,13 +73,6 @@ def build_pages(output_dir, client=None):
         index.replace(local_marker, 'name="data-mode" content="static"', 1),
         encoding="utf-8",
     )
-
-    market_client = client or JsonHttpClient()
-    with ThreadPoolExecutor(max_workers=2) as executor:
-        snapshot_future = executor.submit(fetch_market_snapshot, market_client)
-        history_future = executor.submit(fetch_market_history, market_client)
-        snapshot = snapshot_future.result()
-        history = history_future.result()
 
     data_dir = output / "data"
     data_dir.mkdir()
