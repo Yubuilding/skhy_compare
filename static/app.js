@@ -4,6 +4,7 @@ import {
   renderForeignFlowChart,
   renderPremiumChart,
 } from "./history-charts.mjs";
+import { waitForNewPublishedSnapshot } from "./admin-refresh.mjs";
 
 const elements = {
   adrPrice: document.querySelector("#adrPrice"),
@@ -21,7 +22,10 @@ const elements = {
   pricingStateResult: document.querySelector("#pricingStateResult"),
   pricingStateNote: document.querySelector("#pricingStateNote"),
   refreshButton: document.querySelector("#refreshButton"),
+  refreshButtonLabel: document.querySelector("#refreshButtonLabel"),
   refreshTime: document.querySelector("#refreshTime"),
+  adminRefreshButton: document.querySelector("#adminRefreshButton"),
+  adminRefreshStatus: document.querySelector("#adminRefreshStatus"),
   overallStatus: document.querySelector("#overallStatus"),
   errorBanner: document.querySelector("#errorBanner"),
   adrMeta: document.querySelector("#adrMeta"),
@@ -55,7 +59,16 @@ let hasManualRatio = false;
 let marketInputRevision = 0;
 let requestRevision = 0;
 let historyData = null;
+let lastPublishedSnapshotFetchedAt = null;
+let adminRefreshPromise = null;
 const dataMode = document.querySelector('meta[name="data-mode"]')?.content || "local";
+
+if (dataMode === "static") {
+  elements.refreshButtonLabel.textContent = "读取已发布数据";
+  elements.adminRefreshButton.hidden = false;
+  elements.adminRefreshStatus.hidden = false;
+  elements.adminRefreshStatus.textContent = "管理员更新需在 GitHub 点击 Run workflow";
+}
 
 const usd = new Intl.NumberFormat("zh-CN", {
   style: "currency",
@@ -229,7 +242,8 @@ function applyForeignFlow(flow) {
 
 function applySnapshotStatus(snapshot, manualInputPreserved = false) {
   const fetched = new Date(snapshot.fetchedAt);
-  elements.refreshTime.textContent = `更新于 ${fetched.toLocaleTimeString("zh-CN", {
+  const timeLabel = dataMode === "static" ? "发布于" : "更新于";
+  elements.refreshTime.textContent = `${timeLabel} ${fetched.toLocaleTimeString("zh-CN", {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
@@ -258,9 +272,15 @@ function applySnapshotStatus(snapshot, manualInputPreserved = false) {
   }
 
   elements.overallStatus.className = "live-pill ready";
-  elements.overallStatus.innerHTML = manualInputPreserved
-    ? "<i></i> 外资流向已更新 · 保留手动行情"
-    : "<i></i> 最新数据已更新";
+  if (dataMode === "static") {
+    elements.overallStatus.innerHTML = manualInputPreserved
+      ? "<i></i> 已读取发布数据 · 保留手动行情"
+      : "<i></i> 已读取最新发布数据";
+  } else {
+    elements.overallStatus.innerHTML = manualInputPreserved
+      ? "<i></i> 外资流向已更新 · 保留手动行情"
+      : "<i></i> 最新数据已更新";
+  }
 }
 
 function renderPremiumHistory() {
@@ -356,9 +376,8 @@ async function loadSnapshot({ manualRefresh = false } = {}) {
   elements.errorBanner.hidden = true;
 
   try {
-    const response = await fetch(dataEndpoint("snapshot"), { cache: "no-store" });
-    if (!response.ok) throw new Error(`服务器返回 ${response.status}`);
-    const snapshot = await response.json();
+    const snapshot = await fetchPublishedSnapshot();
+    lastPublishedSnapshotFetchedAt = snapshot.fetchedAt || lastPublishedSnapshotFetchedAt;
 
     if (thisRequest !== requestRevision) return;
     applyForeignFlow(snapshot.foreignFlow);
@@ -393,6 +412,46 @@ async function loadSnapshot({ manualRefresh = false } = {}) {
   }
 }
 
+async function fetchPublishedSnapshot() {
+  const response = await fetch(dataEndpoint("snapshot"), { cache: "no-store" });
+  if (!response.ok) throw new Error(`服务器返回 ${response.status}`);
+  return response.json();
+}
+
+function startAdminRefreshPolling() {
+  if (dataMode !== "static" || adminRefreshPromise) return;
+
+  elements.adminRefreshStatus.textContent = "请在 GitHub 点击 Run workflow；正在等待新版本…";
+  const baselinePromise = lastPublishedSnapshotFetchedAt
+    ? Promise.resolve(lastPublishedSnapshotFetchedAt)
+    : fetchPublishedSnapshot().then((snapshot) => snapshot.fetchedAt);
+  adminRefreshPromise = baselinePromise
+    .then((baselineFetchedAt) => waitForNewPublishedSnapshot({
+      baselineFetchedAt,
+      loadSnapshot: fetchPublishedSnapshot,
+      intervalMs: 5_000,
+      maxAttempts: 36,
+    }))
+    .then(async (snapshot) => {
+      lastPublishedSnapshotFetchedAt = snapshot.fetchedAt;
+      await loadSnapshot({ manualRefresh: true });
+      await loadHistory();
+      const published = new Date(snapshot.fetchedAt);
+      elements.adminRefreshStatus.textContent = `新数据已发布：${published.toLocaleTimeString("zh-CN", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      })}`;
+    })
+    .catch((error) => {
+      elements.adminRefreshStatus.textContent = `${error.message}；可稍后点击“读取已发布数据”`;
+    })
+    .finally(() => {
+      adminRefreshPromise = null;
+    });
+}
+
 marketInputs.forEach((input) => {
   input.addEventListener("input", () => markManual(input));
 });
@@ -405,6 +464,7 @@ elements.refreshButton.addEventListener("click", () => {
   loadSnapshot({ manualRefresh: true });
   loadHistory();
 });
+elements.adminRefreshButton.addEventListener("click", startAdminRefreshPolling);
 
 loadSnapshot();
 loadHistory();

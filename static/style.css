@@ -105,9 +105,28 @@ input {
   gap: 16px;
 }
 
+.refresh-copy {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+}
+
+.refresh-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .refresh-time {
   color: var(--muted);
   font-size: 12px;
+}
+
+.admin-refresh-status {
+  max-width: 300px;
+  color: var(--accent);
+  font-size: 11px;
+  text-align: right;
 }
 
 .refresh-button {
@@ -145,6 +164,26 @@ input {
 
 .refresh-button.loading svg {
   animation: spin 800ms linear infinite;
+}
+
+.admin-refresh-button {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: 99px;
+  color: var(--navy);
+  background: white;
+  font-size: 12px;
+  font-weight: 750;
+  text-decoration: none;
+  transition: border-color 160ms ease, transform 160ms ease;
+}
+
+.admin-refresh-button:hover {
+  border-color: var(--navy);
+  transform: translateY(-1px);
 }
 
 @keyframes spin {
@@ -1046,9 +1085,13 @@ footer {
   }
 
   .refresh-area {
-    flex-direction: column-reverse;
+    flex-direction: column;
     align-items: flex-end;
     gap: 7px;
+  }
+
+  .refresh-actions {
+    justify-content: flex-end;
   }
 
   .refresh-button span {
@@ -1061,8 +1104,18 @@ footer {
   }
 
   .refresh-time {
-    max-width: 125px;
+    max-width: 230px;
     text-align: right;
+  }
+
+  .admin-refresh-status {
+    max-width: 230px;
+  }
+
+  .admin-refresh-button {
+    min-height: 38px;
+    padding: 0 11px;
+    font-size: 11px;
   }
 
   .premium-card,

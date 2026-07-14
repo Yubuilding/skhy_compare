@@ -21,13 +21,26 @@
           </span>
         </a>
         <div class="refresh-area">
-          <span class="refresh-time" id="refreshTime">等待获取行情</span>
-          <button class="refresh-button" id="refreshButton" type="button">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M20 6v5h-5M4 18v-5h5M18.4 9A7 7 0 0 0 6.2 6.2L4 8m16 8-2.2 2A7 7 0 0 1 5.6 15" />
-            </svg>
-            <span>刷新行情</span>
-          </button>
+          <div class="refresh-copy">
+            <span class="refresh-time" id="refreshTime">等待获取行情</span>
+            <span class="admin-refresh-status" id="adminRefreshStatus" hidden></span>
+          </div>
+          <div class="refresh-actions">
+            <button class="refresh-button" id="refreshButton" type="button">
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M20 6v5h-5M4 18v-5h5M18.4 9A7 7 0 0 0 6.2 6.2L4 8m16 8-2.2 2A7 7 0 0 1 5.6 15" />
+              </svg>
+              <span id="refreshButtonLabel">刷新行情</span>
+            </button>
+            <a
+              class="admin-refresh-button"
+              id="adminRefreshButton"
+              href="https://github.com/Yubuilding/skhy_compare/actions/workflows/deploy-pages.yml"
+              target="_blank"
+              rel="noopener noreferrer"
+              hidden
+            >管理员立即更新 ↗</a>
+          </div>
         </div>
       </header>
 

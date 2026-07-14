@@ -19,7 +19,13 @@ class PagesBuildTests(unittest.TestCase):
             history = json.loads((output / "data" / "history.json").read_text())
 
             self.assertIn('name="data-mode" content="static"', index)
+            self.assertIn('id="adminRefreshButton"', index)
+            self.assertIn(
+                "https://github.com/Yubuilding/skhy_compare/actions/workflows/deploy-pages.yml",
+                index,
+            )
             self.assertTrue((output / "app.js").is_file())
+            self.assertTrue((output / "admin-refresh.mjs").is_file())
             self.assertTrue((output / "history-charts.mjs").is_file())
             self.assertEqual(snapshot["quotes"]["adr"]["symbol"], "SKHY")
             self.assertEqual(history["foreignFlow"][-1]["netShares"], -704_671)
