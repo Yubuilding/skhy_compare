@@ -87,7 +87,7 @@
                 <span class="market-tag us">NASDAQ</span>
                 <span class="market-state" id="adrMarketState">--</span>
               </div>
-              <label for="adrPrice">SK 海力士 ADR</label>
+              <label for="adrPrice">SK 海力士 ADR 当前采用价</label>
               <div class="price-input">
                 <span>$</span>
                 <input id="adrPrice" type="number" min="0" step="0.01" inputmode="decimal" placeholder="--" />
@@ -96,6 +96,13 @@
               <div class="quote-meta">
                 <strong>SKHY</strong>
                 <span id="adrMeta">等待数据</span>
+              </div>
+              <div class="overnight-quote" id="overnightQuote">
+                <div>
+                  <span><i></i> 美股夜盘 · BOATS</span>
+                  <strong id="overnightPrice">--</strong>
+                </div>
+                <small id="overnightMeta">等待夜盘行情</small>
               </div>
             </article>
 
@@ -180,11 +187,11 @@
         <section class="disclosure">
           <div>
             <strong>数据说明</strong>
-            <p>ADR 行情优先来自 Nasdaq；韩股与汇率优先来自 Naver Finance；失败时尝试 Yahoo Finance。</p>
+            <p>美股夜盘开放时优先采用 TradingView 的 BOATS 实时成交价；其余时段采用 Nasdaq。韩股与汇率优先来自 Naver Finance，失败时尝试 Yahoo Finance。</p>
           </div>
           <div>
             <strong>使用边界</strong>
-            <p>免费行情可能延迟，且未计入托管费、税费、点差、跨境转换限制。本工具仅供价格观察，不构成投资建议。</p>
+            <p>BOATS 夜盘为美国东部时间 20:00–04:00 的 ATS 市场，流动性和价差可能与常规盘显著不同。免费行情可能延迟，且未计入托管费、税费、点差、跨境转换限制。本工具仅供价格观察，不构成投资建议。</p>
           </div>
         </section>
       </main>

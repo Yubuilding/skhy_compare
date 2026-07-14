@@ -3,6 +3,7 @@
 一个无需安装第三方依赖的本地网页小程序。启动后会自动获取：
 
 - Nasdaq `SKHY` ADR 美元价格；
+- 美国东部时间 20:00–04:00 的 `BOATS:SKHY` 夜盘价格；
 - KOSPI `000660` 韩元价格；
 - `USD/KRW`（1 美元兑韩元）汇率。
 
@@ -34,9 +35,12 @@ macOS：双击 `启动SK海力士速算.command`。
 
 ## 数据源与限制
 
-- ADR：优先 Nasdaq；失败时尝试 Yahoo Finance。
+- ADR 常规盘：优先 Nasdaq；失败时尝试 Yahoo Finance。
+- ADR 夜盘：TradingView / Blue Ocean ATS（BOATS）实时成交价。
 - 韩股和汇率：优先 Naver Finance；失败时尝试 Yahoo Finance。
+- 夜盘开放时，溢价率自动使用 BOATS 夜盘价；夜盘关闭或取数失败时自动回退常规盘/最新可得价。
 - 免费行情可能存在延迟；韩美市场的开闭市时间也不同。
+- BOATS 是独立 ATS 夜盘市场，流动性通常较低，报价和价差可能与 Nasdaq 常规盘明显不同。
 - 计算未计入 ADR 托管费、税费、汇兑点差及跨境转换限制，不构成投资建议。
 
 ## 测试

@@ -485,6 +485,60 @@ input {
   white-space: nowrap;
 }
 
+.overnight-quote {
+  margin-top: 18px;
+  padding: 14px 15px;
+  border: 1px solid #ded8eb;
+  border-radius: 13px;
+  background: #f5f1fa;
+}
+
+.overnight-quote > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.overnight-quote span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #69567d;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.overnight-quote i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #9e8bae;
+}
+
+.overnight-quote.active {
+  border-color: #9f83ba;
+  background: #eee6f6;
+}
+
+.overnight-quote.active i {
+  background: #72508e;
+  box-shadow: 0 0 0 4px rgba(114, 80, 142, 0.12);
+}
+
+.overnight-quote strong {
+  font-size: 17px;
+  letter-spacing: -0.02em;
+}
+
+.overnight-quote small {
+  display: block;
+  margin-top: 7px;
+  color: var(--muted);
+  font-size: 9px;
+}
+
 .result-panel {
   display: grid;
   grid-template-columns: 0.85fr 1.15fr;

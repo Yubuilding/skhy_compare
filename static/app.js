@@ -18,6 +18,9 @@ const elements = {
   overallStatus: document.querySelector("#overallStatus"),
   errorBanner: document.querySelector("#errorBanner"),
   adrMeta: document.querySelector("#adrMeta"),
+  overnightQuote: document.querySelector("#overnightQuote"),
+  overnightPrice: document.querySelector("#overnightPrice"),
+  overnightMeta: document.querySelector("#overnightMeta"),
   krMeta: document.querySelector("#krMeta"),
   fxMeta: document.querySelector("#fxMeta"),
   adrMarketState: document.querySelector("#adrMarketState"),
@@ -48,7 +51,10 @@ function numericValue(input) {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
 
-function formatMarketStatus(status) {
+function formatMarketStatus(status, session) {
+  if (session === "OVERNIGHT" && String(status).toUpperCase() === "OPEN") {
+    return "夜盘交易中";
+  }
   const labels = {
     OPEN: "交易中",
     Open: "交易中",
@@ -131,9 +137,37 @@ function applyQuote(quote, input, meta, marketState) {
     return;
   }
   input.value = quote.price;
+  const sessionLabels = {
+    OVERNIGHT: "夜盘",
+    REGULAR: "常规盘",
+    PREMARKET: "盘前",
+    AFTER_HOURS: "盘后",
+    CLOSED: "最新收盘",
+  };
   const freshness = quote.isRealTime ? "实时" : "最新可得";
-  meta.textContent = `${freshness} · ${quote.source} · ${formatTimestamp(quote.timestamp)}`;
-  if (marketState) marketState.textContent = formatMarketStatus(quote.marketStatus);
+  const sessionLabel = sessionLabels[quote.session];
+  meta.textContent = `${sessionLabel ? `${sessionLabel} · ` : ""}${freshness} · ${quote.source} · ${formatTimestamp(quote.timestamp)}`;
+  if (marketState) {
+    marketState.textContent = formatMarketStatus(quote.marketStatus, quote.session);
+  }
+}
+
+function applyOvernightQuote(adrQuote) {
+  const overnight = adrQuote?.sessions?.overnight;
+  elements.overnightQuote.classList.toggle(
+    "active",
+    overnight?.marketStatus === "OPEN",
+  );
+  if (!overnight) {
+    elements.overnightPrice.textContent = "--";
+    elements.overnightMeta.textContent = adrQuote?.overnightError
+      ? "夜盘获取失败，已回退常规行情"
+      : "当前没有可用夜盘成交价";
+    return;
+  }
+  elements.overnightPrice.textContent = usd.format(overnight.price);
+  const status = overnight.marketStatus === "OPEN" ? "实时交易中" : "上一夜盘成交";
+  elements.overnightMeta.textContent = `${status} · ${formatTimestamp(overnight.timestamp)}`;
 }
 
 function markManual(input) {
@@ -175,6 +209,7 @@ async function loadSnapshot({ manualRefresh = false } = {}) {
       elements.adrRatio.value = snapshot.ratio;
     }
     applyQuote(snapshot.quotes.adr, elements.adrPrice, elements.adrMeta, elements.adrMarketState);
+    applyOvernightQuote(snapshot.quotes.adr);
     applyQuote(snapshot.quotes.koreanShare, elements.krPrice, elements.krMeta, elements.krMarketState);
     applyQuote(snapshot.quotes.fx, elements.fxRate, elements.fxMeta);
     calculate();

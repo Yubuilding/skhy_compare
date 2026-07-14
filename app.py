@@ -13,6 +13,8 @@ from pathlib import Path
 from urllib.parse import quote, urlparse
 from urllib.request import Request, urlopen
 
+from tradingview import TradingViewOvernightClient
+
 
 NASDAQ_QUOTE_URL = "https://api.nasdaq.com/api/quote/SKHY/info?assetclass=stocks"
 NAVER_STOCK_URL = "https://polling.finance.naver.com/api/realtime/domestic/stock/000660"
@@ -28,8 +30,11 @@ DEFAULT_ADRS_PER_KOREAN_SHARE = 10
 class JsonHttpClient:
     """Small JSON HTTP client using only the Python standard library."""
 
-    def __init__(self, timeout=8):
+    def __init__(self, timeout=8, overnight_client=None):
         self.timeout = timeout
+        self.overnight_client = overnight_client or TradingViewOvernightClient(
+            timeout=min(timeout, 7)
+        )
 
     def get_json(self, url, headers=None):
         request_headers = {
@@ -41,6 +46,9 @@ class JsonHttpClient:
         with urlopen(request, timeout=self.timeout) as response:
             charset = response.headers.get_content_charset() or "utf-8"
             return json.loads(response.read().decode(charset))
+
+    def get_overnight_quote(self, symbol):
+        return self.overnight_client.get_quote(symbol)
 
 
 def calculate_comparison(
@@ -89,7 +97,7 @@ def _parse_number(value):
     return parsed
 
 
-def _fetch_adr_quote(client):
+def _fetch_regular_adr_quote(client):
     try:
         payload = client.get_json(
             NASDAQ_QUOTE_URL,
@@ -118,6 +126,61 @@ def _fetch_adr_quote(client):
             "marketStatus": market_status,
             "isRealTime": market_status == "REGULAR",
         }
+
+
+def _fetch_adr_quote(client):
+    regular = None
+    overnight = None
+    regular_error = None
+    overnight_error = None
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        pending = {
+            executor.submit(_fetch_regular_adr_quote, client): "regular",
+            executor.submit(client.get_overnight_quote, "SKHY"): "overnight",
+        }
+        for future in as_completed(pending):
+            quote_type = pending[future]
+            try:
+                quote = future.result()
+                if quote_type == "regular":
+                    regular = quote
+                else:
+                    overnight = quote
+            except (AttributeError,) + DATA_ERRORS as error:
+                if quote_type == "regular":
+                    regular_error = str(error)
+                else:
+                    overnight_error = str(error)
+
+    if regular is not None:
+        regular["session"] = (
+            "REGULAR"
+            if str(regular.get("marketStatus", "")).upper() == "OPEN"
+            else "CLOSED"
+        )
+
+    use_overnight = (
+        overnight is not None
+        and str(overnight.get("marketStatus", "")).upper() == "OPEN"
+    )
+    if use_overnight:
+        selected = dict(overnight)
+    elif regular is not None:
+        selected = dict(regular)
+    else:
+        reasons = "; ".join(
+            reason for reason in (regular_error, overnight_error) if reason
+        )
+        raise OSError(f"No usable SKHY quote ({reasons or 'unknown error'})")
+    selected["sessions"] = {
+        "regular": regular,
+        "overnight": overnight,
+    }
+    if regular_error:
+        selected["regularError"] = regular_error
+    if overnight_error:
+        selected["overnightError"] = overnight_error
+    return selected
 
 
 def _fetch_korean_quote(client):

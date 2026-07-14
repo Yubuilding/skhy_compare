@@ -33,6 +33,45 @@ class StubClient:
             return [{"closePrice": "1,492.30", "localTradedAt": "2026-07-13"}]
         raise AssertionError(f"Unexpected URL: {url}")
 
+    def get_overnight_quote(self, symbol):
+        return {
+            "price": 152.10,
+            "currency": "USD",
+            "symbol": symbol,
+            "source": "TradingView / BOATS",
+            "timestamp": "2026-07-13T03:59:00-04:00",
+            "marketStatus": "CLOSED",
+            "isRealTime": True,
+            "session": "OVERNIGHT",
+        }
+
+
+class ActiveOvernightClient(StubClient):
+    def get_overnight_quote(self, symbol):
+        quote = super().get_overnight_quote(symbol)
+        quote.update(
+            {
+                "price": 156.80,
+                "timestamp": "2026-07-13T22:15:30-04:00",
+                "marketStatus": "OPEN",
+            }
+        )
+        return quote
+
+
+class FailedOvernightClient(StubClient):
+    def get_overnight_quote(self, symbol):
+        raise OSError("BOATS temporarily unavailable")
+
+
+class FailedRegularActiveOvernightClient(ActiveOvernightClient):
+    def get_json(self, url, headers=None):
+        if "api.nasdaq.com" in url or (
+            "finance.yahoo.com" in url and "SKHY" in url
+        ):
+            raise OSError("Regular quote temporarily unavailable")
+        return super().get_json(url, headers)
+
 
 class NasdaqFailureClient(StubClient):
     def get_json(self, url, headers=None):
@@ -134,6 +173,40 @@ class MarketSnapshotTests(unittest.TestCase):
         self.assertEqual(snapshot["quotes"]["koreanShare"]["price"], 1_845_000)
         self.assertEqual(snapshot["quotes"]["fx"]["price"], 1_492.30)
         self.assertAlmostEqual(snapshot["comparison"]["premium_percent"], 25.0, delta=0.01)
+        self.assertEqual(snapshot["errors"], [])
+
+    def test_uses_live_overnight_price_when_boats_session_is_open(self):
+        snapshot = fetch_market_snapshot(ActiveOvernightClient())
+
+        adr = snapshot["quotes"]["adr"]
+        self.assertEqual(adr["price"], 156.80)
+        self.assertEqual(adr["session"], "OVERNIGHT")
+        self.assertEqual(adr["source"], "TradingView / BOATS")
+        self.assertEqual(adr["sessions"]["regular"]["price"], 154.54)
+        self.assertEqual(adr["sessions"]["overnight"]["price"], 156.80)
+        expected = calculate_comparison(156.80, 1_845_000, 1_492.30)
+        self.assertAlmostEqual(
+            snapshot["comparison"]["premium_percent"], expected["premium_percent"]
+        )
+
+    def test_falls_back_to_regular_price_when_overnight_feed_fails(self):
+        snapshot = fetch_market_snapshot(FailedOvernightClient())
+
+        adr = snapshot["quotes"]["adr"]
+        self.assertEqual(adr["price"], 154.54)
+        self.assertEqual(adr["session"], "REGULAR")
+        self.assertIn("temporarily unavailable", adr["overnightError"])
+        self.assertIsNone(adr["sessions"]["overnight"])
+        self.assertEqual(snapshot["errors"], [])
+
+    def test_live_overnight_price_survives_regular_feed_failure(self):
+        snapshot = fetch_market_snapshot(FailedRegularActiveOvernightClient())
+
+        adr = snapshot["quotes"]["adr"]
+        self.assertEqual(adr["price"], 156.80)
+        self.assertEqual(adr["session"], "OVERNIGHT")
+        self.assertIsNone(adr["sessions"]["regular"])
+        self.assertIn("temporarily unavailable", adr["regularError"])
         self.assertEqual(snapshot["errors"], [])
 
     def test_uses_fallback_when_nasdaq_is_unavailable(self):
