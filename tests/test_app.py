@@ -73,6 +73,39 @@ class FailedRegularActiveOvernightClient(ActiveOvernightClient):
         return super().get_json(url, headers)
 
 
+class FailedRegularClosedOvernightClient(StubClient):
+    def get_json(self, url, headers=None):
+        if "api.nasdaq.com" in url or (
+            "finance.yahoo.com" in url and "SKHY" in url
+        ):
+            raise OSError("Regular quote temporarily unavailable")
+        return super().get_json(url, headers)
+
+
+class YahooPostMarketClient(StubClient):
+    def get_json(self, url, headers=None):
+        if "api.nasdaq.com" in url:
+            raise OSError("Nasdaq temporarily unavailable")
+        if "finance.yahoo.com" in url and "SKHY" in url:
+            return {
+                "chart": {
+                    "result": [
+                        {
+                            "meta": {
+                                "regularMarketPrice": 154.54,
+                                "regularMarketTime": 1783951200,
+                                "postMarketPrice": 155.61,
+                                "postMarketTime": 1783970100,
+                                "marketState": "POST",
+                                "exchangeDataDelayedBy": 0,
+                            }
+                        }
+                    ]
+                }
+            }
+        return super().get_json(url, headers)
+
+
 class NasdaqFailureClient(StubClient):
     def get_json(self, url, headers=None):
         if "api.nasdaq.com" in url:
@@ -208,6 +241,25 @@ class MarketSnapshotTests(unittest.TestCase):
         self.assertIsNone(adr["sessions"]["regular"])
         self.assertIn("temporarily unavailable", adr["regularError"])
         self.assertEqual(snapshot["errors"], [])
+
+    def test_uses_last_overnight_trade_when_both_live_sessions_are_unavailable(self):
+        snapshot = fetch_market_snapshot(FailedRegularClosedOvernightClient())
+
+        adr = snapshot["quotes"]["adr"]
+        self.assertEqual(adr["price"], 152.10)
+        self.assertEqual(adr["session"], "OVERNIGHT")
+        self.assertEqual(adr["marketStatus"], "CLOSED")
+        self.assertIn("latest overnight", adr["fallbackReason"])
+        self.assertEqual(snapshot["errors"], [])
+
+    def test_uses_postmarket_price_instead_of_mislabeling_regular_close(self):
+        snapshot = fetch_market_snapshot(YahooPostMarketClient())
+
+        adr = snapshot["quotes"]["adr"]
+        self.assertEqual(adr["price"], 155.61)
+        self.assertEqual(adr["session"], "AFTER_HOURS")
+        self.assertEqual(adr["marketStatus"], "POST")
+        self.assertTrue(adr["isRealTime"])
 
     def test_uses_fallback_when_nasdaq_is_unavailable(self):
         snapshot = fetch_market_snapshot(NasdaqFailureClient())

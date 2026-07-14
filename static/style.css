@@ -407,6 +407,11 @@ input {
   background: var(--accent-soft);
 }
 
+.market-tag.us.night {
+  color: #604378;
+  background: #e9ddf3;
+}
+
 .market-tag.kr {
   color: #21566a;
   background: #e0edf1;

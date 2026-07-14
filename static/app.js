@@ -21,6 +21,7 @@ const elements = {
   overnightQuote: document.querySelector("#overnightQuote"),
   overnightPrice: document.querySelector("#overnightPrice"),
   overnightMeta: document.querySelector("#overnightMeta"),
+  adrMarketTag: document.querySelector("#adrMarketTag"),
   krMeta: document.querySelector("#krMeta"),
   fxMeta: document.querySelector("#fxMeta"),
   adrMarketState: document.querySelector("#adrMarketState"),
@@ -134,6 +135,10 @@ function applyQuote(quote, input, meta, marketState) {
     input.value = "";
     meta.textContent = "本次自动获取失败，请手动输入";
     if (marketState) marketState.textContent = "数据不可用";
+    if (input === elements.adrPrice) {
+      elements.adrMarketTag.textContent = "SKHY";
+      elements.adrMarketTag.classList.remove("night");
+    }
     return;
   }
   input.value = quote.price;
@@ -144,11 +149,17 @@ function applyQuote(quote, input, meta, marketState) {
     AFTER_HOURS: "盘后",
     CLOSED: "最新收盘",
   };
-  const freshness = quote.isRealTime ? "实时" : "最新可得";
+  const isLive = quote.isRealTime && quote.marketStatus === "OPEN";
+  const freshness = isLive ? "实时" : "最新可得";
   const sessionLabel = sessionLabels[quote.session];
   meta.textContent = `${sessionLabel ? `${sessionLabel} · ` : ""}${freshness} · ${quote.source} · ${formatTimestamp(quote.timestamp)}`;
   if (marketState) {
     marketState.textContent = formatMarketStatus(quote.marketStatus, quote.session);
+  }
+  if (input === elements.adrPrice) {
+    const isOvernight = quote.session === "OVERNIGHT";
+    elements.adrMarketTag.textContent = isOvernight ? "BOATS" : "NASDAQ";
+    elements.adrMarketTag.classList.toggle("night", isOvernight);
   }
 }
 
@@ -166,7 +177,11 @@ function applyOvernightQuote(adrQuote) {
     return;
   }
   elements.overnightPrice.textContent = usd.format(overnight.price);
-  const status = overnight.marketStatus === "OPEN" ? "实时交易中" : "上一夜盘成交";
+  const status = overnight.marketStatus === "OPEN" && overnight.isRealTime
+    ? "实时交易中"
+    : overnight.marketStatus === "OPEN"
+      ? "夜盘交易中 · 报价可能延迟"
+      : "上一夜盘成交";
   elements.overnightMeta.textContent = `${status} · ${formatTimestamp(overnight.timestamp)}`;
 }
 

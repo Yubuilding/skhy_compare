@@ -13,6 +13,7 @@ import secrets
 import socket
 import ssl
 import struct
+import time
 from datetime import datetime, timezone
 
 
@@ -39,22 +40,30 @@ _QUOTE_FIELDS = (
 class TradingViewOvernightClient:
     """Fetch the latest BOATS overnight trade for a U.S. symbol."""
 
-    def __init__(self, timeout=7, connection_factory=None, session_id_factory=None):
+    def __init__(
+        self,
+        timeout=7,
+        connection_factory=None,
+        session_id_factory=None,
+        clock=None,
+    ):
         self.timeout = timeout
         self._connection_factory = connection_factory or _connect
         self._session_id_factory = session_id_factory or (
             lambda: f"qs_{secrets.token_hex(6)}"
         )
+        self._clock = clock or time.monotonic
 
     def get_quote(self, symbol):
         tv_symbol = f"BOATS:{symbol}"
         session_id = self._session_id_factory()
+        deadline = self._clock() + self.timeout
         connection = self._connection_factory(self.timeout)
         try:
             # TradingView starts each socket with a server-session greeting.
             # Reading it first avoids racing subscription commands against the
             # server's protocol initialization.
-            connection.receive_text()
+            self._receive_before_deadline(connection, deadline, tv_symbol)
             self._send_command(connection, "set_auth_token", ["unauthorized_user_token"])
             self._send_command(connection, "quote_create_session", [session_id])
             self._send_command(
@@ -69,10 +78,12 @@ class TradingViewOvernightClient:
             )
 
             for _ in range(40):
-                message = connection.receive_text()
-                if "~h~" in message:
-                    connection.send_text(message)
+                message = self._receive_before_deadline(connection, deadline, tv_symbol)
                 for payload in _tradingview_payloads(message):
+                    if payload.startswith("~h~"):
+                        heartbeat = f"~m~{len(payload.encode('utf-8'))}~m~{payload}"
+                        connection.send_text(heartbeat)
+                        continue
                     if not payload.startswith("{"):
                         continue
                     parsed = json.loads(payload)
@@ -93,6 +104,12 @@ class TradingViewOvernightClient:
             raise TimeoutError(f"Timed out waiting for {tv_symbol} overnight quote")
         finally:
             connection.close()
+
+    def _receive_before_deadline(self, connection, deadline, tv_symbol):
+        remaining = deadline - self._clock()
+        if remaining <= 0:
+            raise TimeoutError(f"Timed out waiting for {tv_symbol} overnight quote")
+        return connection.receive_text(timeout=remaining)
 
     @staticmethod
     def _send_command(connection, method, params):
@@ -192,7 +209,9 @@ class _WebSocketConnection:
     def send_text(self, message):
         self._send_frame(0x1, message.encode("utf-8"))
 
-    def receive_text(self):
+    def receive_text(self, timeout=None):
+        if timeout is not None:
+            self._socket.settimeout(max(0.01, timeout))
         while True:
             first, second = self._read_exact(2)
             is_final = bool(first & 0x80)

@@ -116,16 +116,37 @@ def _fetch_regular_adr_quote(client):
         }
     except DATA_ERRORS:
         meta = _fetch_yahoo_meta(client, "SKHY")
-        market_status = meta.get("marketState")
-        return {
-            "price": _parse_number(meta["regularMarketPrice"]),
-            "currency": "USD",
-            "symbol": "SKHY",
-            "source": "Yahoo Finance (fallback)",
-            "timestamp": _yahoo_timestamp(meta),
-            "marketStatus": market_status,
-            "isRealTime": market_status == "REGULAR",
-        }
+        return _yahoo_adr_quote(meta)
+
+
+def _yahoo_adr_quote(meta):
+    market_status = str(meta.get("marketState") or "CLOSED").upper()
+    session = "CLOSED"
+    price_field = "regularMarketPrice"
+    time_field = "regularMarketTime"
+    if market_status in {"PRE", "PREPRE"} and meta.get("preMarketPrice") is not None:
+        session = "PREMARKET"
+        price_field = "preMarketPrice"
+        time_field = "preMarketTime"
+    elif market_status in {"POST", "POSTPOST"} and meta.get("postMarketPrice") is not None:
+        session = "AFTER_HOURS"
+        price_field = "postMarketPrice"
+        time_field = "postMarketTime"
+    elif market_status == "REGULAR":
+        session = "REGULAR"
+
+    delay = meta.get("exchangeDataDelayedBy")
+    is_realtime = delay == 0 if delay is not None else market_status == "REGULAR"
+    return {
+        "price": _parse_number(meta[price_field]),
+        "currency": "USD",
+        "symbol": "SKHY",
+        "source": "Yahoo Finance (fallback)",
+        "timestamp": _yahoo_timestamp(meta, time_field),
+        "marketStatus": market_status,
+        "isRealTime": is_realtime,
+        "session": session,
+    }
 
 
 def _fetch_adr_quote(client):
@@ -153,10 +174,13 @@ def _fetch_adr_quote(client):
                     overnight_error = str(error)
 
     if regular is not None:
-        regular["session"] = (
-            "REGULAR"
-            if str(regular.get("marketStatus", "")).upper() == "OPEN"
-            else "CLOSED"
+        regular.setdefault(
+            "session",
+            (
+                "REGULAR"
+                if str(regular.get("marketStatus", "")).upper() == "OPEN"
+                else "CLOSED"
+            ),
         )
 
     use_overnight = (
@@ -167,6 +191,11 @@ def _fetch_adr_quote(client):
         selected = dict(overnight)
     elif regular is not None:
         selected = dict(regular)
+    elif overnight is not None:
+        selected = dict(overnight)
+        selected["fallbackReason"] = (
+            "Regular quote unavailable; using the latest overnight trade"
+        )
     else:
         reasons = "; ".join(
             reason for reason in (regular_error, overnight_error) if reason
@@ -251,8 +280,8 @@ def _fetch_yahoo_meta(client, symbol):
     return payload["chart"]["result"][0]["meta"]
 
 
-def _yahoo_timestamp(meta):
-    timestamp = meta.get("regularMarketTime")
+def _yahoo_timestamp(meta, field="regularMarketTime"):
+    timestamp = meta.get(field)
     if not timestamp:
         return None
     return datetime.fromtimestamp(timestamp, timezone.utc).isoformat()
